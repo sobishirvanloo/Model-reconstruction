@@ -37,7 +37,7 @@ class Geometry:
         self.console.setReadOnly(True)
         self.console.setGeometry(self.frame_console.rect())
         self.console.setStyleSheet(
-            "background-color: #007ea7; color: white; font-family: Consolas; font-size: 12px;"
+            "background-color: #007ea7; color: white; font-family: Consolas; font-size: 16px;"
         )
 
         # ---------- VTK Widget ----------

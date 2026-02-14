@@ -2,6 +2,7 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import loadUi
 from modules.import_mesh import Geometry
+from modules.point_processing import Processing
 
 
 class MainWindow(QMainWindow):
@@ -11,6 +12,7 @@ class MainWindow(QMainWindow):
 
         # Initialize Geometry
         self.geometry = Geometry(self)
+        self.processing = Processing(self)
 
 
 # ---------- Main ----------
