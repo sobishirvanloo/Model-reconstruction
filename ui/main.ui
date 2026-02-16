@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>980</width>
+    <width>1182</width>
     <height>698</height>
    </rect>
   </property>
@@ -865,7 +865,7 @@ QTextEdit, QPlainTextEdit {
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>980</width>
+     <width>1182</width>
      <height>22</height>
     </rect>
    </property>

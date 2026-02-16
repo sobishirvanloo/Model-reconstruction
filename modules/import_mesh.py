@@ -7,6 +7,24 @@ from PyQt5.QtWidgets import QFileDialog, QPlainTextEdit, QVBoxLayout
 from PyQt5.QtCore import Qt
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
+class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
+
+    def __init__(self, renderer, parent=None):
+        self.AddObserver("MouseWheelForwardEvent", self.zoom_in)
+        self.AddObserver("MouseWheelBackwardEvent", self.zoom_out)
+        self.renderer = renderer
+
+    def zoom_in(self, obj, event):
+        cam = self.renderer.GetActiveCamera()
+        cam.Dolly(1.1)
+        self.renderer.ResetCameraClippingRange()
+        self.GetInteractor().GetRenderWindow().Render()
+
+    def zoom_out(self, obj, event):
+        cam = self.renderer.GetActiveCamera()
+        cam.Dolly(0.9)
+        self.renderer.ResetCameraClippingRange()
+        self.GetInteractor().GetRenderWindow().Render()
 
 class Geometry:
     def __init__(self, main_window):
@@ -184,7 +202,7 @@ class Geometry:
                 f"✅ Rotation applied | X: {self.rotation_x:.1f}° | Y: {self.rotation_y:.1f}° | Z: {self.rotation_z:.1f}°"
             )
         except Exception as e:
-            self.console.appendPlainText(f"❌ Error: {str(e)}")
+         self.console.appendPlainText(f"❌ Error: {str(e)}")
 
     # =========================
     # Import Geometry

@@ -8,6 +8,26 @@ from PyQt5.QtCore import Qt
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from modules.import_mesh import Geometry
 
+class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
+
+    def __init__(self, renderer, parent=None):
+        self.AddObserver("MouseWheelForwardEvent", self.zoom_in)
+        self.AddObserver("MouseWheelBackwardEvent", self.zoom_out)
+        self.renderer = renderer
+
+    def zoom_in(self, obj, event):
+        cam = self.renderer.GetActiveCamera()
+        cam.Dolly(1.1)
+        self.renderer.ResetCameraClippingRange()
+        self.GetInteractor().GetRenderWindow().Render()
+
+    def zoom_out(self, obj, event):
+        cam = self.renderer.GetActiveCamera()
+        cam.Dolly(0.9)
+        self.renderer.ResetCameraClippingRange()
+        self.GetInteractor().GetRenderWindow().Render()
+
+
 class Processing:
     def __init__(self, main_window):
         self.main_window = main_window
@@ -40,26 +60,23 @@ class Processing:
             "background-color: #007ea7; color: white; font-family: Consolas; font-size: 16px;"
         )
 
-        self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText("Import the Point Cloud File")
-        self.console.appendPlainText("=" * 50)
-
          # ---------- VTK Widget ----------
-        self.vtk_widget = QVTKRenderWindowInteractor(self.frame_view)
-        layout = QVBoxLayout(self.frame_view)
+        self.vtk_widget = QVTKRenderWindowInteractor(self.frame_view) #Bridge connect between QT and VTK 
+        layout = QVBoxLayout(self.frame_view) 
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.vtk_widget)
+        layout.addWidget(self.vtk_widget) #Add VTK widget into layout
 
         self.renderer = vtk.vtkRenderer()
-        self.renderer.SetBackground(0.95, 0.95, 0.95)
-        self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
+        self.renderer.SetBackground(0.95, 0.95, 0.95) # Backgroud color
+        self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer) #Add render to window VTK
         self.vtk_widget.GetRenderWindow().SetMultiSamples(0)
-        self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
+        self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor() #Get interactor (mouse drag, zoom, rotate, click event, ...)
 
         # ---------- VTK Initialization ----------
         self.interactor.Initialize()
-        style = vtk.vtkInteractorStyleTrackballActor()  # Mouse rotates actor, not camera
+        style = CustomInteractorStyle(self.renderer)
         self.interactor.SetInteractorStyle(style)
+
 
         
         # Setup axes
@@ -101,7 +118,7 @@ class Processing:
         self.console.appendPlainText("=" * 50)
         self.console.appendPlainText("The program ready to use ✅")
         self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText("📁 Please import a file: (*.ply, *.obj, *.stl, *.pcd, *.txt)")
+        self.console.appendPlainText("📁 Please import a file: (*.txt)")
 
         # Update SpinBox/Slider when actor is rotated by mouse
         self.interactor.AddObserver("EndInteractionEvent", self.update_spinbox_from_actor)
