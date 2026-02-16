@@ -8,6 +8,8 @@ from PyQt5.QtCore import Qt
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from modules.import_mesh import Geometry
 
+
+ # ---------- Customize class for VTK zooming ----------
 class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
 
     def __init__(self, renderer, parent=None):
@@ -52,7 +54,7 @@ class Processing:
         self.vtk_initialized = False
 
 
-                # ---------- Console ----------
+        # ---------- Console ----------
         self.console = QPlainTextEdit(self.frame_console)
         self.console.setReadOnly(True)
         self.console.setGeometry(self.frame_console.rect())
@@ -130,7 +132,7 @@ class Processing:
         axes = vtk.vtkAxesActor()
         axes.SetTotalLength(1, 1, 1)
         axes.SetShaftTypeToCylinder()
-        axes.SetCylinderRadius(0.02)
+        axes.SetCylinderRadius(0.03)
         axes.SetAxisLabels(1)
 
         axes.GetXAxisShaftProperty().SetColor(1, 0, 0)
@@ -147,16 +149,37 @@ class Processing:
     # =========================
 
     def setup_rotation_controls(self):
-        # SpinBoxes
-        self.spinBox_X.valueChanged.connect(lambda val: self.update_rotation('X', val))
-        self.spinBox_Y.valueChanged.connect(lambda val: self.update_rotation('Y', val))
-        self.spinBox_Z.valueChanged.connect(lambda val: self.update_rotation('Z', val))
-        # Sliders
-        self.slider_X.valueChanged.connect(lambda val: self.update_rotation('X', val))
-        self.slider_Y.valueChanged.connect(lambda val: self.update_rotation('Y', val))
-        self.slider_Z.valueChanged.connect(lambda val: self.update_rotation('Z', val))
 
-    def update_rotation(self, axis, value):
+    # ---------- X ----------
+        self.slider_X.valueChanged.connect(
+            lambda val: self.sync_rotation(self.spinBox_X, 'X', val)
+        )
+
+        self.spinBox_X.valueChanged.connect(
+            lambda val: self.sync_rotation(self.slider_X, 'X', val)
+        )
+
+        # ---------- Y ----------
+        self.slider_Y.valueChanged.connect(
+            lambda val: self.sync_rotation(self.spinBox_Y, 'Y', val)
+        )
+
+        self.spinBox_Y.valueChanged.connect(
+            lambda val: self.sync_rotation(self.slider_Y, 'Y', val)
+        )
+
+        # ---------- Z ----------
+        self.slider_Z.valueChanged.connect(
+            lambda val: self.sync_rotation(self.spinBox_Z, 'Z', val)
+        )
+
+        self.spinBox_Z.valueChanged.connect(
+            lambda val: self.sync_rotation(self.slider_Z, 'Z', val)
+        )
+
+    def sync_rotation(self, widget_to_update, axis, value):
+
+        
         if axis == 'X':
             self.rotation_x = float(value)
         elif axis == 'Y':
@@ -164,8 +187,52 @@ class Processing:
         elif axis == 'Z':
             self.rotation_z = float(value)
 
+       
+        widget_to_update.blockSignals(True)
+        widget_to_update.setValue(int(value))
+        widget_to_update.blockSignals(False)
+
+
+    def update_rotation(self, axis, value):
+
+        if axis == 'X':
+            self.rotation_x = float(value)
+
+            self.spinBox_X.blockSignals(True)
+            self.slider_X.blockSignals(True)
+
+            self.spinBox_X.setValue(int(value))
+            self.slider_X.setValue(int(value))
+
+            self.spinBox_X.blockSignals(False)
+            self.slider_X.blockSignals(False)
+
+        elif axis == 'Y':
+            self.rotation_y = float(value)
+
+            self.spinBox_Y.blockSignals(True)
+            self.slider_Y.blockSignals(True)
+
+            self.spinBox_Y.setValue(int(value))
+            self.slider_Y.setValue(int(value))
+
+            self.spinBox_Y.blockSignals(False)
+            self.slider_Y.blockSignals(False)
+
+        elif axis == 'Z':
+            self.rotation_z = float(value)
+
+            self.spinBox_Z.blockSignals(True)
+            self.slider_Z.blockSignals(True)
+
+            self.spinBox_Z.setValue(int(value))
+            self.slider_Z.setValue(int(value))
+
+            self.spinBox_Z.blockSignals(False)
+            self.slider_Z.blockSignals(False)
+
+
     def update_spinbox_from_actor(self, caller=None, event=None):
-        """وقتی با موس shape رو تکون بدی - همین مثل Geometry"""
         if self.mesh_actor is None:
             return
         ox, oy, oz = self.mesh_actor.GetOrientation()
@@ -225,7 +292,6 @@ class Processing:
                     else:
                         self.normals = np.zeros_like(self.points)
                     
-                    # ✅ ذخیره‌سازی داده‌ها (بدون نیاز به Geometry)
                     class SimpleGeometry:
                         def __init__(self):
                             self.points = None
