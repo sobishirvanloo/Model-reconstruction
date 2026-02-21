@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1182</width>
-    <height>707</height>
+    <height>723</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -761,6 +761,30 @@ QSlider::handle:horizontal {
                    </size>
                   </property>
                  </spacer>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="random_point_btn">
+                  <property name="styleSheet">
+                   <string notr="true">QPushButton {
+    background-color: #003459;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: bold;
+}
+QPushButton:hover {
+    background-color: #00a8e8;
+}
+QPushButton:pressed {
+    background-color: #00263a;
+}</string>
+                  </property>
+                  <property name="text">
+                   <string>Shuffle points</string>
+                  </property>
+                 </widget>
                 </item>
                 <item>
                  <widget class="QPushButton" name="pushButton_2">

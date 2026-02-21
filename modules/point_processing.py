@@ -45,15 +45,16 @@ class Processing:
         self.slider_X = main_window.slider_X_2
         self.slider_Y = main_window.slider_Y_2
         self.slider_Z = main_window.slider_Z_2
+        self.random_point_btn = main_window.random_point_btn
 
-        # ---------- Point Density Controls ----------
+        self.random_point_btn.clicked.connect(self.randomize_points)
         self.Point_density_spinbox = main_window.Point_density_spinbox
         self.current_voxel_size = 0.05  # default voxel size
 
         self.processing = None
         self.points = None
+        self.points_changed = None
         self.points_down = None
-        self.normals = None
         self.is_pointcloud = False
         self.actor = None
         self.vtk_initialized = False
@@ -257,6 +258,21 @@ class Processing:
             self.console.appendPlainText(f"❌ Error: {str(e)}")
 
     # =========================
+    # Shuffle Points
+    # =========================
+    def randomize_points(self):
+        if self.points_changed is None:
+            self.console.appendPlainText("❌ No points to shuffle")
+            return
+    
+        # Shuffle the rows of points_changed
+        np.random.shuffle(self.points_changed)
+    
+        # Re-render updated points
+        self.render_processing_with_points(self.points_changed)
+    
+        self.console.appendPlainText(f"🎲 Points shuffled | total points: {len(self.points_changed)}")
+    # =========================
     # Point Density Controls
     # =========================
     # ---------- Setup density controls ----------
@@ -277,6 +293,7 @@ class Processing:
             pc_down = pc_o3d.voxel_down_sample(self.current_voxel_size)
             self.points_down = np.asarray(pc_down.points)
             self.render_processing_with_points(self.points_down)
+            self.points_changed = np.asarray(pc_down.points) 
             self.console.appendPlainText(
                 f"✅ Point cloud updated | voxel_size: {self.current_voxel_size:.3f} | points: {len(self.points_down)}"
             )
@@ -384,7 +401,6 @@ class Processing:
             self.console.appendPlainText(f"File imported ✅: {file_path}")
             self.console.appendPlainText("=" * 50)
             self.console.appendPlainText(f"📊 Points: {len(self.points)}")
-            self.console.appendPlainText(f"📊 Normals: {len(self.normals)}\n")
 
             # Enable rotation and density controls
             for widget in [
@@ -420,30 +436,23 @@ class Processing:
             self.console.appendPlainText(f"❌ Error: {str(e)}")
 
     # =========================
-    # Export Point Cloud with Normals
+    # Export Point Cloud 
     # =========================
     def export_data(self):
-        if self.points is None:
+        if self.points_changed  is None:
             self.console.appendPlainText("❌ No data to export")
             return
 
         file_path_points, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Points", "points.txt", "Text Files (*.txt)"
+            self.main_window, "Save Points", "points_changed.txt", "Text Files (*.txt)"
         )
         if not file_path_points:
             return
 
-        file_path_normals, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Normals", "normals.txt", "Text Files (*.txt)"
-        )
-        if not file_path_normals:
-            return
 
         try:
-            np.savetxt(file_path_points, self.points, fmt="%.6f")
-            np.savetxt(file_path_normals, self.normals, fmt="%.6f")
+            np.savetxt(file_path_points, self.points_changed , fmt="%.6f")
             self.console.appendPlainText(f"File Exported ✅")
             self.console.appendPlainText(f"{file_path_points}")
-            self.console.appendPlainText(f"{file_path_normals}")
         except Exception as e:
             self.console.appendPlainText(f"❌ Export error: {str(e)}")
