@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1182</width>
-    <height>698</height>
+    <height>707</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -723,6 +723,29 @@ QSlider::handle:horizontal {
                   </property>
                   <property name="orientation">
                    <enum>Qt::Horizontal</enum>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="label">
+                  <property name="styleSheet">
+                   <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                  </property>
+                  <property name="text">
+                   <string>Voxel downsampling</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QDoubleSpinBox" name="Point_density_spinbox">
+                  <property name="styleSheet">
+                   <string notr="true">
+    background-color: #ffffff;
+    color: #000000;
+    border: 1px solid #003459;
+    border-radius: 4px;
+    padding: 4px;
+    font-weight: bold;</string>
                   </property>
                  </widget>
                 </item>
