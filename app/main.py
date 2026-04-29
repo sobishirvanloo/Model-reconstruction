@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.uic import loadUi
 from modules.import_mesh import Geometry
 from modules.point_processing import Processing
+from modules.poisson_reconstruction import PoissonReconstruction  
 
 
 class MainWindow(QMainWindow):
@@ -13,6 +14,7 @@ class MainWindow(QMainWindow):
         # Initialize Geometry
         self.geometry = Geometry(self)
         self.processing = Processing(self)
+        self.poisson = PoissonReconstruction(self)  # ← اضافه کن
 
 
 # ---------- Main ----------

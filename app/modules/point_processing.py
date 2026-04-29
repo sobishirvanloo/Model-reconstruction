@@ -262,8 +262,7 @@ class Processing:
     # =========================
     def randomize_points(self):
         if self.points_changed is None:
-            self.console.appendPlainText("❌ No points to shuffle")
-            return
+            self.points_changed = self.points.copy()
     
         # Shuffle the rows of points_changed
         np.random.shuffle(self.points_changed)
