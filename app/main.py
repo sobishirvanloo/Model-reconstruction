@@ -1,9 +1,11 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtCore import QTimer
 from PyQt5.uic import loadUi
 from modules.import_mesh import Geometry
 from modules.point_processing import Processing
-from modules.poisson_reconstruction import PoissonReconstruction  
+from modules.poisson_reconstruction import PoissonReconstruction
+from modules.splash_screen import SplashScreen
 
 
 class MainWindow(QMainWindow):
@@ -11,15 +13,22 @@ class MainWindow(QMainWindow):
         super().__init__()
         loadUi("ui/main.ui", self)
 
-        # Initialize Geometry
         self.geometry = Geometry(self)
         self.processing = Processing(self)
-        self.poisson = PoissonReconstruction(self)  # ← اضافه کن
+        self.poisson = PoissonReconstruction(self)
 
 
 # ---------- Main ----------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    splash = SplashScreen()
+    splash.show()
+    splash.start_animation()
+    app.processEvents()
+
     window = MainWindow()
-    window.show()
+
+    QTimer.singleShot(5000, lambda: splash.finish(window) or window.show())
+
     sys.exit(app.exec_())

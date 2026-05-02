@@ -74,7 +74,9 @@ class PoissonReconstruction:
         self.console.setStyleSheet(
             "background-color: #007ea7; color: white; font-family: Consolas; font-size: 16px;"
         )
-
+        console_layout = QVBoxLayout(self.frame_console)
+        console_layout.setContentsMargins(0, 0, 0, 0)
+        console_layout.addWidget(self.console)
         # ---------- VTK Widget ----------
         self.vtk_widget = QVTKRenderWindowInteractor(self.frame_view)
         layout = QVBoxLayout(self.frame_view)
