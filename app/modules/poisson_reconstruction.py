@@ -1,64 +1,99 @@
+"""Tab 3 - Poisson surface reconstruction (Open3D) with VTK rendering.
+
+The reconstruction pipeline follows ``models/test.py``:
+
+    optional voxel downsampling
+    -> statistical outlier removal
+    -> consistent normal orientation
+    -> Poisson reconstruction
+    -> density filtering
+    -> optional crop to the point-cloud bounding box
+    -> optional Taubin smoothing
+
+The heavy work runs on a background ``QThread`` so the UI stays responsive
+while parameters are being tuned (live reconstruction).
+"""
+
 import os
+
 import numpy as np
 import open3d as o3d
 import vtk
-from PyQt5.QtWidgets import QFileDialog, QPlainTextEdit, QVBoxLayout
-from PyQt5.QtCore import Qt
-from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QFileDialog
+
+from modules.vtk_controls import VTKViewport, RotationMixin
 
 
-# ---------- Customize class for VTK zooming ----------
-class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
+class ReconstructionWorker(QThread):
+    """Runs the Open3D reconstruction off the UI thread.
 
-    def __init__(self, renderer, parent=None):
-        self.AddObserver("MouseWheelForwardEvent", self.zoom_in)
-        self.AddObserver("MouseWheelBackwardEvent", self.zoom_out)
-        self.renderer = renderer
+    Emits ``finished(vertices, triangles)`` on success or
+    ``failed(error_message)`` on failure.
+    """
 
-    def zoom_in(self, obj, event):
-        cam = self.renderer.GetActiveCamera()
-        cam.Dolly(1.1)
-        self.renderer.ResetCameraClippingRange()
-        self.GetInteractor().GetRenderWindow().Render()
+    finished = pyqtSignal(object, object, object)  # (vertices, triangles, info)
+    failed = pyqtSignal(str)
 
-    def zoom_out(self, obj, event):
-        cam = self.renderer.GetActiveCamera()
-        cam.Dolly(0.9)
-        self.renderer.ResetCameraClippingRange()
-        self.GetInteractor().GetRenderWindow().Render()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._job = None
+
+    def set_job(self, job):
+        self._job = job
+
+    def run(self):
+        try:
+            result = self._job()
+        except Exception as e:
+            self.failed.emit(str(e))
+            return
+        self.finished.emit(result[0], result[1], result[2])
 
 
-class PoissonReconstruction:
+class PoissonReconstruction(RotationMixin):
+    """Import points + normals, reconstruct a mesh with Poisson and export it."""
+
+    NO_ACTOR_MESSAGE = "❌ No mesh loaded to rotate"
+
     def __init__(self, main_window):
         self.main_window = main_window
 
         # ---------- UI Elements ----------
-        self.frame_console = main_window.frame_console_6
-        self.frame_view    = main_window.frame_view_6
-        self.btn_import    = main_window.btn_import_pointsandnormals
-        self.btn_export    = main_window.btn_export_6
-        self.pushButton    = main_window.pushButton_6
+        self.btn_import = main_window.btn_import_pointsandnormals
+        self.btn_export = main_window.btn_export_6
+        self.pushButton = main_window.pushButton_6
 
         # Rotation controls
         self.spinBox_X = main_window.spinBox_X_6
         self.spinBox_Y = main_window.spinBox_Y_6
         self.spinBox_Z = main_window.spinBox_Z_6
-        self.slider_X  = main_window.slider_X_6
-        self.slider_Y  = main_window.slider_Y_6
-        self.slider_Z  = main_window.slider_Z_6
+        self.slider_X = main_window.slider_X_6
+        self.slider_Y = main_window.slider_Y_6
+        self.slider_Z = main_window.slider_Z_6
 
         # Poisson parameters
-        self.spinBox_depth      = main_window.spinBox        # QSpinBox  — Depth (max 12)
-        self.doubleSpinBox_width  = main_window.doubleSpinBox   # QDoubleSpinBox — Width
-        self.doubleSpinBox_scale  = main_window.doubleSpinBox_2  # QDoubleSpinBox — Scale
-        self.checkBox_linear_fit  = main_window.Linear_fit      # QCheckBox — linear_fit
+        self.spinBox_depth = main_window.spinBox          # depth (max 12)
+        self.doubleSpinBox_width = main_window.doubleSpinBox   # width
+        self.doubleSpinBox_scale = main_window.doubleSpinBox_2  # scale
+        self.checkBox_linear_fit = main_window.Linear_fit
+
+        # Pipeline parameters
+        self.checkBox_preprocess = main_window.checkBox_preprocess
+        self.doubleSpinBox_voxel = main_window.doubleSpinBox_voxel
+        self.doubleSpinBox_density = main_window.doubleSpinBox_density
+        self.checkBox_crop = main_window.checkBox_crop
+        self.spinBox_smooth = main_window.spinBox_smooth
 
         # ---------- State ----------
-        self.points  = None
+        self.points = None
         self.normals = None
-        self.mesh_o3d   = None   # open3d mesh after reconstruction
-        self.actor      = None
+        self.mesh_o3d = None
+        self.actor = None
         self.mesh_actor = None
+        self.vtk_initialized = False
+        self._worker = None
+        self._pending_run = False
 
         self.rotation_x = 0.0
         self.rotation_y = 0.0
@@ -67,51 +102,45 @@ class PoissonReconstruction:
         self.prev_rotation_y = 0.0
         self.prev_rotation_z = 0.0
 
-        # ---------- Console ----------
-        self.console = QPlainTextEdit(self.frame_console)
-        self.console.setReadOnly(True)
-        self.console.setGeometry(self.frame_console.rect())
-        self.console.setStyleSheet(
-            "background-color: #007ea7; color: white; font-family: Consolas; font-size: 16px;"
-        )
-        console_layout = QVBoxLayout(self.frame_console)
-        console_layout.setContentsMargins(0, 0, 0, 0)
-        console_layout.addWidget(self.console)
-        # ---------- VTK Widget ----------
-        self.vtk_widget = QVTKRenderWindowInteractor(self.frame_view)
-        layout = QVBoxLayout(self.frame_view)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.vtk_widget)
+        # Console + VTK render window + axes
+        VTKViewport(self, main_window.frame_console_6, main_window.frame_view_6)
 
-        self.renderer = vtk.vtkRenderer()
-        self.renderer.SetBackground(0.95, 0.95, 0.95)
-        self.vtk_widget.GetRenderWindow().AddRenderer(self.renderer)
-        self.vtk_widget.GetRenderWindow().SetMultiSamples(0)
-        self.interactor = self.vtk_widget.GetRenderWindow().GetInteractor()
-
-        self.interactor.Initialize()
-        style = CustomInteractorStyle(self.renderer)
-        self.interactor.SetInteractorStyle(style)
-
-        self.setup_axes()
-        self.vtk_widget.GetRenderWindow().Render()
-
-        # ---------- Poisson parameter defaults ----------
+        # ---------- Configure parameter widgets ----------
         self.spinBox_depth.setMinimum(1)
         self.spinBox_depth.setMaximum(12)
-        self.spinBox_depth.setValue(8)
+        self.spinBox_depth.setValue(10)
 
         self.doubleSpinBox_width.setMinimum(0.0)
-        self.doubleSpinBox_width.setMaximum(9999.0)
-        self.doubleSpinBox_width.setSingleStep(0.1)
-        self.doubleSpinBox_width.setValue(0.0)
+        self.doubleSpinBox_width.setMaximum(100.0)
+        self.doubleSpinBox_width.setSingleStep(0.5)
+        self.doubleSpinBox_width.setValue(0.0)          # 0 = auto
 
-        self.doubleSpinBox_scale.setMinimum(0.01)
-        self.doubleSpinBox_scale.setMaximum(100.0)
+        self.doubleSpinBox_scale.setDecimals(2)
+        self.doubleSpinBox_scale.setMinimum(0.1)
+        self.doubleSpinBox_scale.setMaximum(10.0)
         self.doubleSpinBox_scale.setSingleStep(0.1)
         self.doubleSpinBox_scale.setValue(1.1)
-
         self.checkBox_linear_fit.setChecked(False)
+
+        # Preprocessing / cleaning
+        self.checkBox_preprocess.setChecked(True)
+        self.doubleSpinBox_voxel.setDecimals(4)
+        self.doubleSpinBox_voxel.setMinimum(0.0)
+        self.doubleSpinBox_voxel.setMaximum(10.0)
+        self.doubleSpinBox_voxel.setSingleStep(0.01)
+        self.doubleSpinBox_voxel.setValue(0.0)          # 0 = off
+
+        self.doubleSpinBox_density.setDecimals(1)
+        self.doubleSpinBox_density.setMinimum(0.0)
+        self.doubleSpinBox_density.setMaximum(50.0)
+        self.doubleSpinBox_density.setSingleStep(0.5)
+        self.doubleSpinBox_density.setValue(2.0)        # quantile %
+
+        self.checkBox_crop.setChecked(True)
+
+        self.spinBox_smooth.setMinimum(0)
+        self.spinBox_smooth.setMaximum(100)
+        self.spinBox_smooth.setValue(5)                 # 0 = off
 
         # ---------- Connect buttons ----------
         self.btn_import.clicked.connect(self.import_files)
@@ -119,276 +148,288 @@ class PoissonReconstruction:
         self.pushButton.clicked.connect(self.apply_rotation)
         self.btn_export.setEnabled(False)
 
-        # Live update on parameter change
-        self.spinBox_depth.valueChanged.connect(self.live_reconstruct)
-        self.doubleSpinBox_width.valueChanged.connect(self.live_reconstruct)
-        self.doubleSpinBox_scale.valueChanged.connect(self.live_reconstruct)
-        self.checkBox_linear_fit.stateChanged.connect(self.live_reconstruct)
-
-        # ---------- Rotation controls ----------
         self.setup_rotation_controls()
+        self._connect_live_controls()
 
-        # ---------- Disable controls until import ----------
         self._set_controls_enabled(False)
-
-        self.interactor.AddObserver("EndInteractionEvent", self.update_spinbox_from_actor)
 
         self.console.appendPlainText("=" * 50)
         self.console.appendPlainText("Poisson Reconstruction ready ✅")
         self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText("📁 Please import Points and Normals files (.txt / .npy)")
+        self.console.appendPlainText(
+            "📁 Please import Points and Normals files (.txt / .npy / .csv)"
+        )
+
+        # Sync the UI after a mouse rotation (matrix based - more accurate)
+        self.interactor.AddObserver(
+            "EndInteractionEvent", self.update_spinbox_from_matrix
+        )
 
     # =========================
-    # Helper
+    # Signal wiring / enable state
     # =========================
-    def _set_controls_enabled(self, enabled: bool):
-        for widget in [
+    def _connect_live_controls(self):
+        """Re-run the reconstruction whenever a parameter changes."""
+        for widget in (
+            self.spinBox_depth,
+            self.doubleSpinBox_width,
+            self.doubleSpinBox_scale,
+            self.doubleSpinBox_voxel,
+            self.doubleSpinBox_density,
+            self.spinBox_smooth,
+        ):
+            widget.valueChanged.connect(self.live_reconstruct)
+
+        for widget in (
+            self.checkBox_linear_fit,
+            self.checkBox_preprocess,
+            self.checkBox_crop,
+        ):
+            widget.toggled.connect(self.live_reconstruct)
+
+    def _set_controls_enabled(self, enabled):
+        for widget in (
             self.spinBox_X, self.spinBox_Y, self.spinBox_Z,
             self.slider_X, self.slider_Y, self.slider_Z,
-            self.pushButton, self.btn_export,
-            self.spinBox_depth, self.doubleSpinBox_width,
-            self.doubleSpinBox_scale, self.checkBox_linear_fit,
-        ]:
+            self.pushButton,
+        ):
             widget.setEnabled(enabled)
-
-    # =========================
-    # Axes
-    # =========================
-    def setup_axes(self):
-        axes = vtk.vtkAxesActor()
-        axes.SetTotalLength(1, 1, 1)
-        axes.SetShaftTypeToCylinder()
-        axes.SetCylinderRadius(0.03)
-        axes.SetAxisLabels(1)
-        axes.GetXAxisShaftProperty().SetColor(1, 0, 0)
-        axes.GetYAxisShaftProperty().SetColor(0, 1, 0)
-        axes.GetZAxisShaftProperty().SetColor(0, 0, 1)
-
-        self.marker = vtk.vtkOrientationMarkerWidget()
-        self.marker.SetOrientationMarker(axes)
-        self.marker.SetInteractor(self.interactor)
-        self.marker.SetViewport(0.0, 0.0, 0.2, 0.2)
-        self.marker.SetEnabled(1)
-        self.marker.InteractiveOff()
-
-    # =========================
-    # Rotation Controls
-    # =========================
-    def setup_rotation_controls(self):
-        self.slider_X.valueChanged.connect(lambda v: self.sync_rotation(self.spinBox_X, 'X', v))
-        self.spinBox_X.valueChanged.connect(lambda v: self.sync_rotation(self.slider_X,  'X', v))
-        self.slider_Y.valueChanged.connect(lambda v: self.sync_rotation(self.spinBox_Y, 'Y', v))
-        self.spinBox_Y.valueChanged.connect(lambda v: self.sync_rotation(self.slider_Y,  'Y', v))
-        self.slider_Z.valueChanged.connect(lambda v: self.sync_rotation(self.spinBox_Z, 'Z', v))
-        self.spinBox_Z.valueChanged.connect(lambda v: self.sync_rotation(self.slider_Z,  'Z', v))
-
-    def sync_rotation(self, widget_to_update, axis, value):
-        if axis == 'X':
-            self.rotation_x = float(value)
-        elif axis == 'Y':
-            self.rotation_y = float(value)
-        elif axis == 'Z':
-            self.rotation_z = float(value)
-
-        widget_to_update.blockSignals(True)
-        widget_to_update.setValue(int(value))
-        widget_to_update.blockSignals(False)
-
-    def update_spinbox_from_actor(self, obj, event):
-        if self.actor is None:
-            return
-        try:
-            matrix = self.actor.GetMatrix()
-
-            import math
-            sy = math.sqrt(matrix.GetElement(0, 0) ** 2 + matrix.GetElement(1, 0) ** 2)
-            singular = sy < 1e-6
-
-            if not singular:
-                rx = math.degrees(math.atan2(matrix.GetElement(2, 1), matrix.GetElement(2, 2)))
-                ry = math.degrees(math.atan2(-matrix.GetElement(2, 0), sy))
-                rz = math.degrees(math.atan2(matrix.GetElement(1, 0), matrix.GetElement(0, 0)))
-            else:
-                rx = math.degrees(math.atan2(-matrix.GetElement(1, 2), matrix.GetElement(1, 1)))
-                ry = math.degrees(math.atan2(-matrix.GetElement(2, 0), sy))
-                rz = 0.0
-
-            self._update_rotation_ui('X', rx)
-            self._update_rotation_ui('Y', ry)
-            self._update_rotation_ui('Z', rz)
-        except Exception:
-            pass
-
-    def _update_rotation_ui(self, axis, value):
-        value = int(round(value))
-        if axis == 'X':
-            self.rotation_x = float(value)
-            for w in [self.spinBox_X, self.slider_X]:
-                w.blockSignals(True); w.setValue(value); w.blockSignals(False)
-        elif axis == 'Y':
-            self.rotation_y = float(value)
-            for w in [self.spinBox_Y, self.slider_Y]:
-                w.blockSignals(True); w.setValue(value); w.blockSignals(False)
-        elif axis == 'Z':
-            self.rotation_z = float(value)
-            for w in [self.spinBox_Z, self.slider_Z]:
-                w.blockSignals(True); w.setValue(value); w.blockSignals(False)
-
-    def apply_rotation(self):
-        if self.actor is None:
-            self.console.appendPlainText("❌ No mesh loaded to rotate")
-            return
-        try:
-            delta_x = self.rotation_x - self.prev_rotation_x
-            delta_y = self.rotation_y - self.prev_rotation_y
-            delta_z = self.rotation_z - self.prev_rotation_z
-
-            self.actor.RotateX(delta_x)
-            self.actor.RotateY(delta_y)
-            self.actor.RotateZ(delta_z)
-
-            self.prev_rotation_x = self.rotation_x
-            self.prev_rotation_y = self.rotation_y
-            self.prev_rotation_z = self.rotation_z
-
-            self.vtk_widget.GetRenderWindow().Render()
-            self.console.appendPlainText(
-                f"✅ Rotation applied | X: {self.rotation_x:.1f}° | Y: {self.rotation_y:.1f}° | Z: {self.rotation_z:.1f}°"
-            )
-        except Exception as e:
-            self.console.appendPlainText(f"❌ Error: {str(e)}")
 
     # =========================
     # Import Files
     # =========================
     def import_files(self):
+        """Prompt for a points file and a normals file, then reconstruct."""
         # --- Import Points ---
         points_path, _ = QFileDialog.getOpenFileName(
-            self.main_window,
-            "Import Points File",
-            "",
+            self.main_window, "Import Points File", "",
             "Point Files (*.txt *.npy *.csv)"
         )
         if not points_path:
-            self.console.appendPlainText("❌ Import cancelled (points file not selected)")
+            self.console.appendPlainText(
+                "❌ Import cancelled (points file not selected)"
+            )
             return
 
         # --- Import Normals ---
         normals_path, _ = QFileDialog.getOpenFileName(
-            self.main_window,
-            "Import Normals File",
-            "",
+            self.main_window, "Import Normals File", "",
             "Normal Files (*.txt *.npy *.csv)"
         )
         if not normals_path:
-            self.console.appendPlainText("❌ Import cancelled (normals file not selected)")
+            self.console.appendPlainText(
+                "❌ Import cancelled (normals file not selected)"
+            )
             return
 
         try:
-            self.points  = self._load_array(points_path)
+            self.points = self._load_array(points_path)
             self.normals = self._load_array(normals_path)
-
-            if self.points.shape[1] < 3:
-                self.console.appendPlainText("❌ Points file must have at least 3 columns (x, y, z)")
-                return
-            if self.normals.shape[1] < 3:
-                self.console.appendPlainText("❌ Normals file must have at least 3 columns (nx, ny, nz)")
-                return
-
-            self.points  = self.points[:, :3]
-            self.normals = self.normals[:, :3]
 
             if self.points.shape[0] != self.normals.shape[0]:
                 self.console.appendPlainText(
-                    f"❌ Row count mismatch: points={self.points.shape[0]}, normals={self.normals.shape[0]}"
+                    f"❌ Mismatch: {self.points.shape[0]} points vs "
+                    f"{self.normals.shape[0]} normals"
                 )
                 return
 
             self.console.clear()
             self.console.appendPlainText("=" * 50)
-            self.console.appendPlainText(f"✅ Points loaded : {points_path}")
-            self.console.appendPlainText(f"✅ Normals loaded: {normals_path}")
-            self.console.appendPlainText(f"📊 Point count   : {len(self.points)}")
+            self.console.appendPlainText("Files imported ✅")
             self.console.appendPlainText("=" * 50)
-            self.console.appendPlainText("⏳ Running Poisson reconstruction…")
+            self.console.appendPlainText(f"📊 Points:  {self.points.shape[0]}")
+            self.console.appendPlainText(f"📊 Normals: {self.normals.shape[0]}")
 
-            # Enable controls
             self._set_controls_enabled(True)
+            self.btn_export.setEnabled(False)
 
-            # Reset rotation UI
+            # Reset rotation and UI
             self.rotation_x = self.rotation_y = self.rotation_z = 0.0
             self.prev_rotation_x = self.prev_rotation_y = self.prev_rotation_z = 0.0
-            for spin in [self.spinBox_X, self.spinBox_Y, self.spinBox_Z]:
-                spin.blockSignals(True); spin.setValue(0); spin.blockSignals(False)
-            for slider in [self.slider_X, self.slider_Y, self.slider_Z]:
-                slider.blockSignals(True); slider.setValue(0); slider.blockSignals(False)
 
-            # Run reconstruction
-            self._run_reconstruction()
+            for spin in [self.spinBox_X, self.spinBox_Y, self.spinBox_Z]:
+                spin.blockSignals(True)
+                spin.setValue(0)
+                spin.blockSignals(False)
+
+            for slider in [self.slider_X, self.slider_Y, self.slider_Z]:
+                slider.blockSignals(True)
+                slider.setValue(0)
+                slider.blockSignals(False)
+
+            # Start the reconstruction in the background
+            self.live_reconstruct()
 
         except Exception as e:
             self.console.appendPlainText(f"❌ Import error: {str(e)}")
 
-    def _load_array(self, path: str) -> np.ndarray:
+    # =========================
+    # Preprocessing (mirrors models/test.py)
+    # =========================
+    def _preprocess(self, points, normals, preprocess, voxel_size):
+        """Normalize normals, optionally voxel-downsample, remove outliers
+        and orient the normals consistently.
+
+        This runs on the background thread, so every option is passed in as
+        a plain value instead of reading the UI.
+        """
+        # Normalize normals
+        normals = np.asarray(normals, dtype=float)
+        norms = np.linalg.norm(normals, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        normals = normals / norms
+
+        if not preprocess:
+            return points, normals
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.normals = o3d.utility.Vector3dVector(normals)
+
+        # Optional voxel downsampling (also averages the normals)
+        if voxel_size > 0:
+            pcd = pcd.voxel_down_sample(voxel_size)
+
+        # Statistical outlier removal
+        pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+
+        # Re-estimate normals when they were lost (downsampling / filtering)
+        if not pcd.has_normals():
+            pcd.estimate_normals(
+                search_param=o3d.geometry.KDTreeSearchParamHybrid(
+                    radius=max(voxel_size * 4.0, 0.05),
+                    max_nn=30,
+                )
+            )
+
+        # Consistent orientation (best general choice)
+        pcd.orient_normals_consistent_tangent_plane(k=30)
+
+        return np.asarray(pcd.points), np.asarray(pcd.normals)
+
+    # =========================
+    # Poisson Reconstruction (heavy work, runs in the worker thread)
+    # =========================
+    def _build_mesh(self, params, points, normals):
+        """Full pipeline -> (vertices, triangles)."""
+        depth = params["depth"]
+        width = params["width"]
+        scale = params["scale"]
+        linear_fit = params["linear_fit"]
+
+        points, normals = self._preprocess(
+            points, normals, params["preprocess"], params["voxel"]
+        )
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.normals = o3d.utility.Vector3dVector(normals)
+
+        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+            pcd, depth=depth, width=width, scale=scale, linear_fit=linear_fit
+        )
+
+        # --- density filtering ---
+        densities = np.asarray(densities)
+        q = params["density_q"]
+        if q > 0:
+            if len(densities) == len(mesh.vertices):
+                threshold = np.quantile(densities, q)
+                mesh.remove_vertices_by_mask(densities < threshold)
+
+        # --- crop to the point cloud bounding box ---
+        if params["crop"]:
+            mesh = mesh.crop(pcd.get_axis_aligned_bounding_box())
+
+        # --- smoothing ---
+        if params["smooth"] > 0:
+            mesh = mesh.filter_smooth_taubin(
+                number_of_iterations=params["smooth"]
+            )
+
+        mesh.compute_vertex_normals()
+        self.mesh_o3d = mesh
+        info = {"points_after_preprocess": len(points)}
+        return np.asarray(mesh.vertices), np.asarray(mesh.triangles), info
+
+    # =========================
+    # Loaders
+    # =========================
+    def _load_array(self, path):
         ext = os.path.splitext(path)[1].lower()
         if ext == ".npy":
             arr = np.load(path)
-        elif ext in (".txt", ".csv"):
-            arr = np.loadtxt(path)
-        else:
+        else:  # .txt / .csv
             arr = np.loadtxt(path)
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)
-        return arr
-
+        return np.asarray(arr, dtype=float)
+# =========================
+    # Live Reconstruction (background thread, debounced)
     # =========================
-    # Poisson Reconstruction
-    # =========================
-    def _run_reconstruction(self):
+    def live_reconstruct(self, *_):
+        """Called whenever a Poisson parameter changes."""
         if self.points is None or self.normals is None:
             return
-        try:
-            depth       = self.spinBox_depth.value()
-            width       = self.doubleSpinBox_width.value()
-            scale       = self.doubleSpinBox_scale.value()
-            linear_fit  = self.checkBox_linear_fit.isChecked()
+        self._restart_reconstruction()
 
-            pcd = o3d.geometry.PointCloud()
-            pcd.points  = o3d.utility.Vector3dVector(self.points)
-            pcd.normals = o3d.utility.Vector3dVector(self.normals)
+    def _restart_reconstruction(self):
+        if self._worker is not None and self._worker.isRunning():
+            # A reconstruction is running: mark it and it will be re-run
+            # automatically as soon as the current job finishes.
+            self._pending_run = True
+            return
+        self._start_worker()
 
-            mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-                pcd,
-                depth=depth,
-                width=width,
-                scale=scale,
-                linear_fit=linear_fit,
-            )
+    def _start_worker(self):
+        self._pending_run = False
+        self.console.appendPlainText("⏳ Reconstructing…")
+        self.btn_export.setEnabled(False)
 
-            self.mesh_o3d = mesh
+        # Snapshot parameters/inputs on the UI thread, pass copies to the worker
+        params = {
+            "depth": self.spinBox_depth.value(),
+            "width": self.doubleSpinBox_width.value(),
+            "scale": self.doubleSpinBox_scale.value(),
+            "linear_fit": self.checkBox_linear_fit.isChecked(),
+            "preprocess": self.checkBox_preprocess.isChecked(),
+            "voxel": self.doubleSpinBox_voxel.value(),
+            "density_q": self.doubleSpinBox_density.value() / 100.0,
+            "crop": self.checkBox_crop.isChecked(),
+            "smooth": self.spinBox_smooth.value(),
+        }
+        job = lambda: self._build_mesh(
+            params,
+            self.points.copy(),
+            self.normals.copy(),
+        )
 
-            vertices  = np.asarray(mesh.vertices)
-            triangles = np.asarray(mesh.triangles)
+        self._worker = ReconstructionWorker(self.vtk_widget)
+        self._worker.set_job(job)
+        self._worker.finished.connect(self._on_reconstruction_done)
+        self._worker.failed.connect(self._on_reconstruction_failed)
+        self._worker.start()
 
-            self.console.appendPlainText(
-                f"✅ Reconstruction done | vertices: {len(vertices)} | triangles: {len(triangles)}"
-            )
-            self.console.appendPlainText(
-                f"   depth={depth} | width={width} | scale={scale} | linear_fit={linear_fit}"
-            )
+    def _on_reconstruction_done(self, vertices, triangles, info):
+        pre_count = info.get("points_after_preprocess", "?")
+        self.console.appendPlainText(
+            f"   Points after preprocessing: {pre_count}"
+        )
+        self._render_mesh(vertices, triangles)
+        if self._worker is not None and not self._worker.isRunning():
+            self._worker.deleteLater()
+            self._worker = None
+        if self._pending_run:
+            self._start_worker()
 
-            self._render_mesh(vertices, triangles)
-
-        except Exception as e:
-            self.console.appendPlainText(f"❌ Reconstruction error: {str(e)}")
-
-    def live_reconstruct(self, *_):
-        """Called whenever a Poisson parameter changes — re-runs reconstruction live."""
-        if self.points is not None and self.normals is not None:
-            self._run_reconstruction()
+    def _on_reconstruction_failed(self, message):
+        self.console.appendPlainText(f"❌ Reconstruction error: {message}")
+        if self._worker is not None and not self._worker.isRunning():
+            self._worker.deleteLater()
+            self._worker = None
 
     # =========================
-    # Render VTK Mesh
+    # Background thread result -> VTK render (main thread)
     # =========================
     def _render_mesh(self, vertices, triangles):
         # Remove old actor
@@ -422,6 +463,10 @@ class PoissonReconstruction:
             mapper = vtk.vtkPolyDataMapper()
             mapper.SetInputConnection(normals_filter.GetOutputPort())
 
+            if not self.vtk_initialized:
+                self.interactor.Initialize()
+                self.vtk_initialized = True
+
             self.actor = vtk.vtkActor()
             self.actor.SetMapper(mapper)
             self.actor.GetProperty().SetColor(0.2, 0.6, 0.9)
@@ -434,12 +479,16 @@ class PoissonReconstruction:
             self.renderer.ResetCamera()
             self.vtk_widget.GetRenderWindow().Render()
 
+            self.mesh_actor = self.actor
+            n_v, n_t = len(vertices), len(triangles)
+            self.console.appendPlainText(
+                f"✅ Reconstruction done | vertices: {n_v} | triangles: {n_t}"
+            )
             self.btn_export.setEnabled(True)
 
         except Exception as e:
             self.console.appendPlainText(f"❌ Render error: {str(e)}")
-
-    # =========================
+# =========================
     # Export (STL / OBJ)
     # =========================
     def export_data(self):
@@ -457,12 +506,9 @@ class PoissonReconstruction:
         mesh.compute_vertex_normals()
 
         file_path, selected_filter = QFileDialog.getSaveFileName(
-            self.main_window,
-            "Export Mesh",
-            "reconstructed_mesh",
+            self.main_window, "Export Mesh", "reconstructed_mesh",
             "STL Files (*.stl);;OBJ Files (*.obj)"
         )
-
         if not file_path:
             return
 
@@ -470,16 +516,12 @@ class PoissonReconstruction:
             if "stl" in selected_filter.lower():
                 if not file_path.endswith(".stl"):
                     file_path += ".stl"
-
                 success = o3d.io.write_triangle_mesh(file_path, mesh, write_ascii=False)
                 self.console.appendPlainText(f"STL export success: {success}")
-
             else:
                 if not file_path.endswith(".obj"):
                     file_path += ".obj"
-
                 success = o3d.io.write_triangle_mesh(file_path, mesh)
                 self.console.appendPlainText(f"OBJ export success: {success}")
-
         except Exception as e:
             self.console.appendPlainText(f"❌ Export error: {str(e)}")

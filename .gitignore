@@ -1,0 +1,22 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- Virtual environments ----
+myenv/
+venv/
+.env
+env/
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ---- Duplicate / generated files ----
+app/normals.txt
+app/ui/test.ui
+models/reconstructed_mesh.stl
+models/reconstructed_mesh.obj

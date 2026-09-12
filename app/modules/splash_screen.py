@@ -1,156 +1,164 @@
-from PyQt5.QtWidgets import QSplashScreen, QApplication, QProgressBar, QLabel, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtProperty, QObject
-from PyQt5.QtGui import QPixmap, QPainter, QColor, QFont, QPen, QConicalGradient, QPainterPath
+"""Splash screen for Model Reconstruction (PyQt5-compatible).
+
+The previous implementation relied on Qt6 / Qt Quick classes that do not
+exist in PyQt5 (``QSplashScreen``, ``QPropertyAnimation``, ``QEasingCurve``,
+``pyqtProperty``, ``QPainterPath``, ``QConicalGradient``) which stopped the
+whole application from starting.  This version is built exclusively from
+standard PyQt5 widgets so it always runs.
+"""
+
 import sys
-import math
+
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import (
+    QApplication,
+    QLabel,
+    QMainWindow,
+    QProgressBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 
-class SplashScreen(QSplashScreen):
+class SplashScreen(QWidget):
+    """Frameless, always-on-top splash window.
+
+    Shows the application title, a status message and a progress bar,
+    then fades out and hands control over to the main window.
+    """
+
+    BG_COLOR = "#00171f"
+    ACCENT = "#00a8e8"
+    ACCENT_DARK = "#007ea7"
+    TRACK = "#003459"
+
+    NUM_STEPS = 100          # total progress steps
+    STEP_INTERVAL_MS = 50    # 50 ms * 100 = 5 s loading animation
+    DOT_INTERVAL_MS = 400
+
     def __init__(self):
-        pixmap = QPixmap(600, 400)
-        pixmap.fill(QColor("#00171f"))
-        super().__init__(pixmap, Qt.WindowStaysOnTopHint)
-        self.setWindowFlag(Qt.FramelessWindowHint)
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.resize(600, 400)
+        self.setStyleSheet(
+            f"""
+            QWidget#splashRoot {{ background-color: {self.BG_COLOR};
+                                border: 2px solid {self.TRACK};
+                                border-radius: 12px; }}
+            QLabel#splashTitle {{ color: {self.ACCENT};
+                                  font: bold 20px "Segoe UI"; }}
+            QLabel#splashMsg {{ color: {self.ACCENT_DARK};
+                               font: 11px "Segoe UI"; }}
+            QLabel#splashPct {{ color: {self.ACCENT_DARK};
+                                font: 10px "Segoe UI"; }}
+            QProgressBar {{ background-color: {self.TRACK};
+                            border: none; border-radius: 3px;
+                            min-height: 10px; max-height: 10px; }}
+            QProgressBar::chunk {{ background-color: {self.ACCENT};
+                                   border-radius: 3px; }}
+            """
+        )
+        self.setObjectName("splashRoot")
 
-        self._progress = 0
-        self._arc_angle = 0
-
-        # Timer for progress animation (5 seconds)
+        self._messages = ["Sobhan Shirvanloo"]
         self._step = 0
-        self._total_steps = 100
+        self._progress = 0
+        self._current_msg = 0
+        self._dots = 0
+
+        title = QLabel("Model Reconstruction")
+        title.setObjectName("splashTitle")
+        title.setAlignment(Qt.AlignCenter)
+
+        self.msg = QLabel(self._messages[0].upper())
+        self.msg.setObjectName("splashMsg")
+        self.msg.setAlignment(Qt.AlignCenter)
+
+        self.bar = QProgressBar()
+        self.bar.setRange(0, self.NUM_STEPS)
+        self.bar.setTextVisible(False)
+
+        self.pct = QLabel("0%")
+        self.pct.setObjectName("splashPct")
+        self.pct.setAlignment(Qt.AlignCenter)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(16)
+        layout.addWidget(title)
+        layout.addWidget(self.msg)
+        layout.addStretch()
+        layout.addWidget(self.bar)
+        layout.addWidget(self.pct)
+
+        # Timers
         self.progress_timer = QTimer()
-        self.progress_timer.setInterval(50)  # 50ms * 100 steps = 5 seconds
+        self.progress_timer.setInterval(self.STEP_INTERVAL_MS)
         self.progress_timer.timeout.connect(self._update_progress)
 
-        # Timer for arc animation
-        self.arc_timer = QTimer()
-        self.arc_timer.setInterval(30)
-        self.arc_timer.timeout.connect(self._update_arc)
-
-        # Dot animation
-        self._dot_phase = 0
         self.dot_timer = QTimer()
-        self.dot_timer.setInterval(400)
+        self.dot_timer.setInterval(self.DOT_INTERVAL_MS)
         self.dot_timer.timeout.connect(self._update_dots)
-        self._active_dot = 0
 
-        # Messages shown during loading
-        self._messages = [
-            "Sobhan Shirvanloo"
-        ]
-        self._current_msg = 0
-
+    # ------------------------------------------------------------------
+    # Animation
+    # ------------------------------------------------------------------
     def start_animation(self):
         self.progress_timer.start()
-        self.arc_timer.start()
         self.dot_timer.start()
+
+    def _update_dots(self):
+        self._dots = (self._dots + 1) % 4
+        self.msg.setText(
+            self._messages[self._current_msg].upper() + "." * self._dots
+        )
 
     def _update_progress(self):
         self._step += 1
-        self._progress = int((self._step / self._total_steps) * 100)
-        self._current_msg = min(self._step // 20, len(self._messages) - 1)
-        self.repaint()
-        if self._step >= self._total_steps:
+        if self._step > self.NUM_STEPS:
             self.progress_timer.stop()
+            return
+        self._progress = int((self._step / self.NUM_STEPS) * 100)
+        self.bar.setValue(self._step)
+        self.pct.setText(f"{self._progress}%")
+        if self._step % 20 == 0:
+            self._current_msg = min(self._step // 20, len(self._messages) - 1)
+            self._update_dots()
+# ------------------------------------------------------------------
+    # Cleanup / transition
+    # ------------------------------------------------------------------
+    def finish(self, main_window, fade_steps=20, fade_interval=25):
+        """Stop the animation, fade out, then show the main window."""
+        self.progress_timer.stop()
+        self.dot_timer.stop()
 
-    def _update_arc(self):
-        self._arc_angle += 3
-        if self._arc_angle > 360:
-            self._arc_angle = 0
-        self.repaint()
+        counter = [0]
 
-    def _update_dots(self):
-        self._active_dot = (self._active_dot + 1) % 3
-        self.repaint()
+        def fade_step():
+            counter[0] += 1
+            alpha = max(0.0, 1.0 - counter[0] / fade_steps)
+            self.setWindowOpacity(alpha)
+            if counter[0] >= fade_steps:
+                fade_timer.stop()
+                self.hide()
+                self.deleteLater()
+                main_window.show()
 
-    def drawContents(self, painter: QPainter):
-        painter.setRenderHint(QPainter.Antialiasing)
-        w, h = self.width(), self.height()
-
-        # Background
-        painter.fillRect(0, 0, w, h, QColor("#00171f"))
-
-        cx, cy = w // 2, h // 2 - 40
-
-        # Outer ring
-        pen = QPen(QColor("#003459"), 5)
-        painter.setPen(pen)
-        painter.drawEllipse(cx - 45, cy - 45, 90, 90)
-
-        # Progress arc
-        span = int(self._progress * 3.6 * 16)  # Qt uses 1/16 degree units
-        pen2 = QPen(QColor("#00a8e8"), 5)
-        pen2.setCapStyle(Qt.RoundCap)
-        painter.setPen(pen2)
-        painter.drawArc(cx - 45, cy - 45, 90, 90, 90 * 16, -span)
-
-        # Triangle icon inside circle
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#00a8e8"))
-        path = QPainterPath()
-        path.moveTo(cx, cy - 18)
-        path.lineTo(cx + 16, cy + 10)
-        path.lineTo(cx - 16, cy + 10)
-        path.closeSubpath()
-        painter.drawPath(path)
-
-        # Base rectangle
-        painter.setBrush(QColor("#007ea7"))
-        painter.drawRoundedRect(cx - 10, cy + 14, 20, 5, 2, 2)
-
-        # Title
-        painter.setPen(QColor("#00a8e8"))
-        font = QFont("Segoe UI", 18, QFont.Medium)
-        painter.setFont(font)
-        painter.drawText(0, cy + 65, w, 30, Qt.AlignCenter, "Model Reconstruction")
-
-        # Subtitle / status message
-        painter.setPen(QColor("#007ea7"))
-        font2 = QFont("Segoe UI", 10)
-        painter.setFont(font2)
-        msg = self._messages[self._current_msg]
-        painter.drawText(0, cy + 90, w, 20, Qt.AlignCenter, msg.upper())
-
-        # Progress bar background
-        bar_x = cx - 130
-        bar_y = cy + 125
-        bar_w = 260
-        bar_h = 6
-        painter.setBrush(QColor("#003459"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, 3, 3)
-
-        # Progress bar fill
-        fill_w = int(bar_w * self._progress / 100)
-        if fill_w > 0:
-            painter.setBrush(QColor("#00a8e8"))
-            painter.drawRoundedRect(bar_x, bar_y, fill_w, bar_h, 3, 3)
-
-        # Percentage text
-        painter.setPen(QColor("#007ea7"))
-        font3 = QFont("Segoe UI", 9)
-        painter.setFont(font3)
-        painter.drawText(0, bar_y + 12, w, 20, Qt.AlignCenter, f"{self._progress}%")
-
-        # Animated dots
-        dot_y = bar_y + 40
-        dot_colors = ["#003459", "#003459", "#003459"]
-        dot_colors[self._active_dot] = "#00a8e8"
-        for i, color in enumerate(dot_colors):
-            dx = cx - 12 + i * 12
-            painter.setBrush(QColor(color))
-            painter.setPen(Qt.NoPen)
-            painter.drawEllipse(dx, dot_y, 8, 8)
+        fade_timer = QTimer()
+        fade_timer.setInterval(fade_interval)
+        fade_timer.timeout.connect(fade_step)
+        fade_timer.start()
 
 
 def create_splash_and_show(main_window_class):
-    """
+    """Show the splash, build the main window, then fade to it.
+
     Usage:
         from splash_screen import create_splash_and_show
         from main_window import MainWindow
 
         app = QApplication(sys.argv)
-        window = create_splash_and_show(MainWindow)
+        window, app = create_splash_and_show(MainWindow)
         sys.exit(app.exec_())
     """
     app = QApplication.instance() or QApplication(sys.argv)
@@ -162,47 +170,22 @@ def create_splash_and_show(main_window_class):
 
     main_win = main_window_class()
 
-    def finish_loading():
-        splash.arc_timer.stop()
-        splash.dot_timer.stop()
-
-        # Fade out over 5 seconds using opacity via window flags workaround
-        fade_steps = 50
-        fade_interval = 100  # ms -> 5 seconds total
-
-        counter = [0]
-        def fade_step():
-            counter[0] += 1
-            alpha = int(255 * (1 - counter[0] / fade_steps))
-            px = QPixmap(splash.size())
-            px.fill(QColor(0, 23, 31, max(0, alpha)))
-            # Simply close after full fade
-            if counter[0] >= fade_steps:
-                fade_timer.stop()
-                splash.finish(main_win)
-                main_win.show()
-
-        fade_timer = QTimer()
-        fade_timer.setInterval(fade_interval)
-        fade_timer.timeout.connect(fade_step)
-        fade_timer.start()
-
-    # After 5 seconds loading + 5 seconds fade
-    QTimer.singleShot(5000, finish_loading)
+    # 5 s loading animation, then fade to the main window.
+    QTimer.singleShot(5000, lambda: splash.finish(main_win))
 
     return main_win, app
 
 
-# ── Standalone demo ──────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------
+# Standalone demo
+# ----------------------------------------------------------------------
 if __name__ == "__main__":
-    from PyQt5.QtWidgets import QMainWindow
 
     class DummyMain(QMainWindow):
         def __init__(self):
             super().__init__()
             self.setWindowTitle("Model Reconstruction")
             self.resize(1182, 881)
-            self.setStyleSheet("background-color:#00171f;")
 
     app = QApplication(sys.argv)
     window, _ = create_splash_and_show(DummyMain)

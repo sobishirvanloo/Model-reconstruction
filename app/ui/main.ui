@@ -1259,6 +1259,108 @@ QSlider::handle:horizontal {
                </widget>
               </item>
               <item>
+               <widget class="QLabel" name="label_preproc">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Preprocess</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="checkBox_preprocess">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Denoise + orient normals</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_voxel">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Voxel size (0 = off)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QDoubleSpinBox" name="doubleSpinBox_voxel">
+                <property name="styleSheet">
+                 <string notr="true">
+    background-color: #ffffff;
+    color: #000000;
+    border: 1px solid #003459;
+    border-radius: 4px;
+    padding: 4px;
+    font-weight: bold;
+</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_density">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Density filter (%)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QDoubleSpinBox" name="doubleSpinBox_density">
+                <property name="styleSheet">
+                 <string notr="true">
+    background-color: #ffffff;
+    color: #000000;
+    border: 1px solid #003459;
+    border-radius: 4px;
+    padding: 4px;
+    font-weight: bold;
+</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="checkBox_crop">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Crop to bounds</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="label_smooth">
+                <property name="styleSheet">
+                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
+                </property>
+                <property name="text">
+                 <string>Smoothing (iters)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QSpinBox" name="spinBox_smooth">
+                <property name="styleSheet">
+                 <string notr="true">QSpinBox {
+    background-color: #ffffff;
+    color: #000000;
+    border: 1px solid #003459;
+    border-radius: 4px;
+    padding: 4px;
+    font-weight: bold;
+}</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <widget class="QPushButton" name="pushButton_6">
                 <property name="styleSheet">
                  <string notr="true">QPushButton {

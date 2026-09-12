@@ -1,0 +1,8 @@
+# Model Reconstruction — dependencies
+# Python 3.11 recommended (the project was originally built against 3.11).
+# On Python >= 3.13 these packages may not have wheels yet.
+
+numpy==1.26.4
+PyQt5==5.15.10
+vtk==9.3.0
+open3d==0.18.0
