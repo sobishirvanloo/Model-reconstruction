@@ -8,11 +8,12 @@ module (import_mesh / point_processing / poisson_reconstruction):
 * ``RotationMixin``      — slider/spinbox <-> actor rotation logic.
 """
 
-import math
-
+import numpy as np
 import vtk
 from PyQt5.QtWidgets import QPlainTextEdit, QVBoxLayout
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+
+from modules.geometry_utils import vtk_matrix_to_numpy
 
 
 CONSOLE_STYLESHEET = (
@@ -106,25 +107,32 @@ class VTKViewport:
         owner.marker.SetEnabled(1)
         owner.marker.InteractiveOff()
 
-    @staticmethod
-    def reset_camera(owner):
-        owner.renderer.ResetCamera()
-        owner.vtk_widget.GetRenderWindow().Render()
 
 class RotationMixin:
     """Slider/spinbox <-> actor rotation, shared by every tab.
 
+    The spinbox/slider values are *absolute* angles and map 1:1 onto
+    ``vtkProp3D.SetOrientation`` / ``GetOrientation``, so the UI and the
+    actor can never drift apart (incremental RotateX/Y/Z deltas do not
+    commute and did).  The actor origin is placed at the centre of its
+    bounds so it rotates in place - the same pivot the mouse uses.
+
     Expected instance attributes:
 
         spinBox_X/Y/Z, slider_X/Y/Z     Qt widgets
-        rotation_*, prev_rotation_*     float angles (degrees)
-        mesh_actor or actor             the VTK actor being rotated
-        vtk_widget, console
+        actor                           the VTK actor being rotated
+        renderer, vtk_widget, console
     """
 
     NO_ACTOR_MESSAGE = "❌ Please import a file first"
 
     # ---------- public API ----------
+
+    def init_rotation_state(self):
+        self.actor = None
+        self.rotation_x = 0.0
+        self.rotation_y = 0.0
+        self.rotation_z = 0.0
 
     def setup_rotation_controls(self):
         """Wire the X/Y/Z slider <-> spinbox pairs together."""
@@ -141,38 +149,38 @@ class RotationMixin:
         self.spinBox_Z.valueChanged.connect(
             lambda v: self.sync_rotation(self.slider_Z, "Z", v))
 
+        # Update spinboxes/sliders when the actor is rotated with the mouse
+        self.interactor.AddObserver(
+            "EndInteractionEvent", self.update_spinbox_from_actor
+        )
+
+    def rotation_widgets(self):
+        return (
+            self.spinBox_X, self.spinBox_Y, self.spinBox_Z,
+            self.slider_X, self.slider_Y, self.slider_Z,
+            self.pushButton,
+        )
+
     def sync_rotation(self, widget_to_update, axis, value):
         setattr(self, f"rotation_{axis.lower()}", float(value))
         widget_to_update.blockSignals(True)
         widget_to_update.setValue(int(value))
         widget_to_update.blockSignals(False)
 
-    def update_rotation(self, axis, value):
-        setattr(self, f"rotation_{axis.lower()}", float(value))
-        for widget in (getattr(self, f"spinBox_{axis}"),
-                       getattr(self, f"slider_{axis}")):
-            widget.blockSignals(True)
-            widget.setValue(int(value))
-            widget.blockSignals(False)
+    def reset_rotation(self):
+        """Zero the angles and the widgets (e.g. after a new import)."""
+        for axis in "XYZ":
+            self._update_rotation_ui(axis, 0.0)
 
     def apply_rotation(self):
-        actor = self._rotation_actor()
+        actor = self.actor
         if actor is None:
             self.console.appendPlainText(self.NO_ACTOR_MESSAGE)
             return
         try:
-            delta_x = self.rotation_x - self.prev_rotation_x
-            delta_y = self.rotation_y - self.prev_rotation_y
-            delta_z = self.rotation_z - self.prev_rotation_z
-
-            actor.RotateX(delta_x)
-            actor.RotateY(delta_y)
-            actor.RotateZ(delta_z)
-
-            self.prev_rotation_x = self.rotation_x
-            self.prev_rotation_y = self.rotation_y
-            self.prev_rotation_z = self.rotation_z
-
+            actor.SetOrientation(
+                self.rotation_x, self.rotation_y, self.rotation_z
+            )
             self.vtk_widget.GetRenderWindow().Render()
 
             self.console.appendPlainText(
@@ -182,68 +190,48 @@ class RotationMixin:
         except Exception as e:
             self.console.appendPlainText(f"❌ Error: {str(e)}")
 
+    def show_actor(self, actor, reset_camera=True):
+        """Replace the displayed actor, keeping the current rotation."""
+        if self.actor is not None:
+            self.renderer.RemoveActor(self.actor)
+
+        bounds = actor.GetBounds()
+        actor.SetOrigin(
+            (bounds[0] + bounds[1]) / 2.0,
+            (bounds[2] + bounds[3]) / 2.0,
+            (bounds[4] + bounds[5]) / 2.0,
+        )
+        actor.SetOrientation(self.rotation_x, self.rotation_y, self.rotation_z)
+
+        self.actor = actor
+        self.renderer.AddActor(actor)
+        if reset_camera:
+            self.renderer.ResetCamera()
+        else:
+            self.renderer.ResetCameraClippingRange()
+        self.vtk_widget.GetRenderWindow().Render()
+        return actor
+
+    def actor_matrix(self):
+        """4x4 numpy transform of the displayed actor (rotation, mouse pan
+        and scale) - applied on export so the file matches the view."""
+        if self.actor is None:
+            return np.eye(4)
+        return vtk_matrix_to_numpy(self.actor.GetMatrix())
+
     # ---------- internals ----------
 
-    def _rotation_actor(self):
-        return getattr(self, "mesh_actor", None) or getattr(self, "actor", None)
-
     def update_spinbox_from_actor(self, caller=None, event=None):
-        """Sync the UI after the user rotates the actor with the mouse.
-
-        Uses ``vtkProp3D.GetOrientation()`` - suitable for actors rotated
-        with RotateX/RotateY/RotateZ (used by the mesh / point tabs).
-        """
-        actor = self._rotation_actor()
-        if actor is None:
+        """Sync the UI after the user rotates the actor with the mouse."""
+        if self.actor is None:
             return
-        ox, oy, oz = actor.GetOrientation()
-        self.rotation_x, self.rotation_y, self.rotation_z = ox, oy, oz
-        for axis, value in zip("XYZ", (ox, oy, oz)):
-            for widget in (getattr(self, f"spinBox_{axis}"),
-                           getattr(self, f"slider_{axis}")):
-                widget.blockSignals(True)
-                widget.setValue(int(value))
-                widget.blockSignals(False)
-        self.prev_rotation_x, self.prev_rotation_y, self.prev_rotation_z = ox, oy, oz
-
-    def update_spinbox_from_matrix(self, caller=None, event=None):
-        """Sync the UI after mouse rotation using the actor's 3x3 matrix.
-
-        More accurate than ``GetOrientation`` for composed rotations
-        (used by the reconstruction tab).
-        """
-        actor = self._rotation_actor()
-        if actor is None:
-            return
-        try:
-            matrix = actor.GetMatrix()
-            sy = math.sqrt(matrix.GetElement(0, 0) ** 2
-                           + matrix.GetElement(1, 0) ** 2)
-            singular = sy < 1e-6
-
-            if not singular:
-                rx = math.degrees(math.atan2(matrix.GetElement(2, 1),
-                                             matrix.GetElement(2, 2)))
-                ry = math.degrees(math.atan2(-matrix.GetElement(2, 0), sy))
-                rz = math.degrees(math.atan2(matrix.GetElement(1, 0),
-                                             matrix.GetElement(0, 0)))
-            else:
-                rx = math.degrees(math.atan2(-matrix.GetElement(1, 2),
-                                             matrix.GetElement(1, 1)))
-                ry = math.degrees(math.atan2(-matrix.GetElement(2, 0), sy))
-                rz = 0.0
-
-            self._update_rotation_ui("X", rx)
-            self._update_rotation_ui("Y", ry)
-            self._update_rotation_ui("Z", rz)
-        except Exception:
-            pass
+        for axis, value in zip("XYZ", self.actor.GetOrientation()):
+            self._update_rotation_ui(axis, value)
 
     def _update_rotation_ui(self, axis, value):
-        value = int(round(value))
         setattr(self, f"rotation_{axis.lower()}", float(value))
         for widget in (getattr(self, f"spinBox_{axis}"),
                        getattr(self, f"slider_{axis}")):
             widget.blockSignals(True)
-            widget.setValue(value)
+            widget.setValue(int(round(value)))
             widget.blockSignals(False)

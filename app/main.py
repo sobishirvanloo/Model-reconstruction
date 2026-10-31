@@ -1,14 +1,13 @@
 import os
 import sys
 
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QMainWindow
 from PyQt5.uic import loadUi
 
 from modules.import_mesh import Geometry
 from modules.point_processing import Processing
 from modules.poisson_reconstruction import PoissonReconstruction
-from modules.splash_screen import SplashScreen
+from modules.splash_screen import create_splash_and_show
 
 
 class MainWindow(QMainWindow):
@@ -25,19 +24,20 @@ class MainWindow(QMainWindow):
         self.processing = Processing(self)
         self.poisson = PoissonReconstruction(self)
 
+    def send_point_cloud(self, data, target):
+        """Hand a ``PointCloudData`` to another tab in memory and show it.
+
+        ``target`` is ``"processing"`` or ``"reconstruction"``.
+        """
+        tab, page = {
+            "processing": (self.processing, self.tab_2),
+            "reconstruction": (self.poisson, self.tab_5),
+        }[target]
+        self.tabWidget.setCurrentWidget(page)
+        tab.receive_data(data)
+
 
 # ---------- Main ----------
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    splash = SplashScreen()
-    splash.show()
-    splash.start_animation()
-    app.processEvents()
-
-    window = MainWindow()
-
-    # After the 5 s loading animation, fade into the main window.
-    QTimer.singleShot(5000, lambda: splash.finish(window))
-
+    window, app = create_splash_and_show(MainWindow)
     sys.exit(app.exec_())

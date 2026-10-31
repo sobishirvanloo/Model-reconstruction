@@ -33,7 +33,7 @@ class SplashScreen(QWidget):
     TRACK = "#003459"
 
     NUM_STEPS = 100          # total progress steps
-    STEP_INTERVAL_MS = 50    # 50 ms * 100 = 5 s loading animation
+    STEP_INTERVAL_MS = 20    # 20 ms * 100 = 2 s minimum loading animation
     DOT_INTERVAL_MS = 400
 
     def __init__(self):
@@ -65,6 +65,7 @@ class SplashScreen(QWidget):
         self._progress = 0
         self._current_msg = 0
         self._dots = 0
+        self._main_window = None
 
         title = QLabel("Model Reconstruction")
         title.setObjectName("splashTitle")
@@ -117,6 +118,8 @@ class SplashScreen(QWidget):
         self._step += 1
         if self._step > self.NUM_STEPS:
             self.progress_timer.stop()
+            if self._main_window is not None:
+                self.finish(self._main_window)
             return
         self._progress = int((self._step / self.NUM_STEPS) * 100)
         self.bar.setValue(self._step)
@@ -124,9 +127,18 @@ class SplashScreen(QWidget):
         if self._step % 20 == 0:
             self._current_msg = min(self._step // 20, len(self._messages) - 1)
             self._update_dots()
-# ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
     # Cleanup / transition
     # ------------------------------------------------------------------
+    def finish_when_done(self, main_window):
+        """Fade to ``main_window`` once the progress animation completes
+        (immediately if it already has)."""
+        if self.progress_timer.isActive():
+            self._main_window = main_window
+        else:
+            self.finish(main_window)
+
     def finish(self, main_window, fade_steps=20, fade_interval=25):
         """Stop the animation, fade out, then show the main window."""
         self.progress_timer.stop()
@@ -144,7 +156,7 @@ class SplashScreen(QWidget):
                 self.deleteLater()
                 main_window.show()
 
-        fade_timer = QTimer()
+        fade_timer = QTimer(self)
         fade_timer.setInterval(fade_interval)
         fade_timer.timeout.connect(fade_step)
         fade_timer.start()
@@ -165,13 +177,17 @@ def create_splash_and_show(main_window_class):
 
     splash = SplashScreen()
     splash.show()
-    splash.start_animation()
     app.processEvents()
 
+    # Build the main window first (this blocks the event loop), then run
+    # the animation so the progress bar never freezes half way.
     main_win = main_window_class()
+    # Keep a reference: a parentless local widget would be garbage
+    # collected on return, killing its timers (and the hand-off).
+    main_win._splash = splash
 
-    # 5 s loading animation, then fade to the main window.
-    QTimer.singleShot(5000, lambda: splash.finish(main_win))
+    splash.start_animation()
+    splash.finish_when_done(main_win)
 
     return main_win, app
 

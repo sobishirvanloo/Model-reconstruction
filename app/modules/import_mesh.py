@@ -7,13 +7,24 @@ import open3d as o3d
 import vtk
 from PyQt5.QtWidgets import QFileDialog
 
+from modules.geometry_utils import (
+    estimate_oriented_normals,
+    normalize,
+    polydata_from_numpy,
+)
+from modules.point_data import (
+    PointCloudData,
+    add_button_after,
+    ask_save_point_cloud,
+)
 from modules.vtk_controls import VTKViewport, RotationMixin
 
 
 class Geometry(RotationMixin):
     """Import a 3D geometry (mesh or point cloud), display it in VTK,
-    rotate it with sliders/spinboxes or the mouse and export
-    points + normals.
+    rotate it with sliders/spinboxes or the mouse, then export
+    points + normals or send them straight to another tab (with the
+    displayed rotation applied).
     """
 
     def __init__(self, main_window):
@@ -30,39 +41,37 @@ class Geometry(RotationMixin):
         self.slider_Z = main_window.slider_Z
 
         # Geometry data
-        self.geometry = None
         self.points = None
         self.normals = None
-        self.is_pointcloud = False
-        self.actor = None
-        self.mesh_actor = None
-        self.vtk_initialized = False
+        self.triangles = None   # None for a point cloud
+        self.source_name = ""
+        self.init_rotation_state()
 
         # Console + VTK render window + axes
         VTKViewport(self, main_window.frame_console, main_window.frame_view)
-
-        # ---------- Rotation ----------
-        self.rotation_x = 0.0
-        self.rotation_y = 0.0
-        self.rotation_z = 0.0
-        self.prev_rotation_x = 0.0
-        self.prev_rotation_y = 0.0
-        self.prev_rotation_z = 0.0
 
         # ---------- Connect buttons ----------
         self.btn_import.clicked.connect(self.import_file)
         self.btn_export.clicked.connect(self.export_data)
         self.pushButton.clicked.connect(self.apply_rotation)
-        self.btn_export.setEnabled(False)
-
         self.setup_rotation_controls()
 
+        # Send the data to another tab in memory (no intermediate files)
+        self.btn_send_reconstruction = add_button_after(
+            self.btn_export, "➡ Send to Reconstruction"
+        )
+        self.btn_send_processing = add_button_after(
+            self.btn_export, "➡ Send to Processing"
+        )
+        self.btn_send_processing.clicked.connect(
+            lambda: self.send_data("processing")
+        )
+        self.btn_send_reconstruction.clicked.connect(
+            lambda: self.send_data("reconstruction")
+        )
+
         # Disable controls until a file is imported
-        for widget in [
-            self.spinBox_X, self.spinBox_Y, self.spinBox_Z,
-            self.slider_X, self.slider_Y, self.slider_Z,
-            self.pushButton
-        ]:
+        for widget in self.rotation_widgets() + self._data_buttons():
             widget.setEnabled(False)
 
         self.console.appendPlainText("=" * 50)
@@ -72,107 +81,99 @@ class Geometry(RotationMixin):
             "📁 Please import a file: (*.ply, *.obj, *.stl, *.pcd)"
         )
 
-        # Update spinboxes/sliders when the actor is rotated with the mouse
-        self.interactor.AddObserver(
-            "EndInteractionEvent", self.update_spinbox_from_actor
-        )
-
     # =========================
     # Import Geometry
     # =========================
-    def import_geometry(self, file_path):
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == ".pcd":
-            self.is_pointcloud = True
-            self.geometry = o3d.io.read_point_cloud(file_path)
-            if not self.geometry.has_normals():
-                self.geometry.estimate_normals()
-            self.points = np.asarray(self.geometry.points)
-            self.normals = np.asarray(self.geometry.normals)
+    @staticmethod
+    def _load_point_cloud(file_path):
+        pcd = o3d.io.read_point_cloud(file_path)
+        if len(pcd.points) == 0:
+            raise ValueError("File contains no points!")
+        pcd = pcd.remove_duplicated_points()
+        if pcd.has_normals():
+            normals = normalize(np.asarray(pcd.normals))
         else:
-            self.is_pointcloud = False
-            self.geometry = o3d.io.read_triangle_mesh(file_path)
-            self.geometry.compute_vertex_normals()
-            if len(self.geometry.triangles) == 0:
+            normals = np.asarray(estimate_oriented_normals(pcd).normals)
+        return np.asarray(pcd.points), normals, None
+
+    @staticmethod
+    def _load_mesh(file_path):
+        mesh = o3d.io.read_triangle_mesh(file_path)
+        if len(mesh.triangles) == 0:
+            return None
+        # STL stores every triangle corner separately; merge them so each
+        # surface point is exported once with an averaged vertex normal.
+        mesh.remove_duplicated_vertices()
+        mesh.remove_degenerate_triangles()
+        mesh.remove_duplicated_triangles()
+        mesh.remove_unreferenced_vertices()
+        mesh.compute_vertex_normals()
+        return (
+            np.asarray(mesh.vertices).copy(),
+            normalize(np.asarray(mesh.vertex_normals)),
+            np.asarray(mesh.triangles).copy(),
+        )
+
+    def import_geometry(self, file_path):
+        """Load the file; the current state is only replaced on success."""
+        ext = os.path.splitext(file_path)[1].lower()
+        result = None
+        if ext != ".pcd":
+            result = self._load_mesh(file_path)
+            if result is None and ext != ".ply":
                 raise ValueError("Mesh has no triangles!")
-            self.points = np.asarray(self.geometry.vertices)
-            self.normals = np.asarray(self.geometry.vertex_normals)
+        if result is None:
+            # .pcd, or a .ply that stores a point cloud instead of a mesh
+            result = self._load_point_cloud(file_path)
+        self.points, self.normals, self.triangles = result
+        self.source_name = os.path.basename(file_path)
+
+    def _data_buttons(self):
+        return (
+            self.btn_export,
+            self.btn_send_processing,
+            self.btn_send_reconstruction,
+        )
 
     # =========================
-    # Export Geometry
+    # Current data (as displayed)
     # =========================
-    def export_geometry(self, file_path_points, file_path_normals):
-        if self.geometry is None:
+    def current_data(self):
+        """Points + normals with the displayed rotation applied."""
+        reference = (
+            (self.points, self.triangles) if self.triangles is not None else None
+        )
+        data = PointCloudData(
+            self.points, self.normals, self.source_name, reference
+        )
+        return data.transformed(self.actor_matrix())
+
+    def send_data(self, target):
+        if self.points is None:
+            self.console.appendPlainText(self.NO_ACTOR_MESSAGE)
             return
-        np.savetxt(file_path_points, self.points, fmt="%.6f")
-        np.savetxt(file_path_normals, self.normals, fmt="%.6f")
-# =========================
+        self.main_window.send_point_cloud(self.current_data(), target)
+        self.console.appendPlainText(
+            f"➡ Sent {len(self.points)} points + normals to {target}"
+        )
+
+    # =========================
     # Render Geometry
     # =========================
     def render_geometry(self):
         """Render geometry and return the actor."""
-        if self.geometry is None:
-            print("[ERROR] Geometry is None in render_geometry()")
-            return None
+        polydata = polydata_from_numpy(self.points, self.normals, self.triangles)
 
-        # Remove previous actor
-        if self.actor:
-            self.renderer.RemoveActor(self.actor)
-            self.actor = None
-
-        # ========== Build VTK Points ==========
-        vtk_points = vtk.vtkPoints()
-        vtk_normals = vtk.vtkFloatArray()
-        vtk_normals.SetNumberOfComponents(3)
-        vtk_normals.SetName("Normals")
-
-        for p, n in zip(self.points, self.normals):
-            vtk_points.InsertNextPoint(p[0], p[1], p[2])
-            vtk_normals.InsertNextTuple((n[0], n[1], n[2]))
-
-        # ========== Build PolyData ==========
-        polydata = vtk.vtkPolyData()
-        polydata.SetPoints(vtk_points)
-        polydata.GetPointData().SetNormals(vtk_normals)
-
-        # Add cells only for a mesh (not a point cloud)
-        if not self.is_pointcloud:
-            vtk_cells = vtk.vtkCellArray()
-            for tri in np.asarray(self.geometry.triangles):
-                triangle = vtk.vtkTriangle()
-                triangle.GetPointIds().SetId(0, tri[0])
-                triangle.GetPointIds().SetId(1, tri[1])
-                triangle.GetPointIds().SetId(2, tri[2])
-                vtk_cells.InsertNextCell(triangle)
-            polydata.SetPolys(vtk_cells)
-
-        # Point cloud -> glyphs
-        if self.is_pointcloud:
-            glyph = vtk.vtkVertexGlyphFilter()
-            glyph.SetInputData(polydata)
-            glyph.Update()
-            polydata = glyph.GetOutput()
-
-        # ========== Mapper & Actor ==========
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(polydata)
 
-        self.actor = vtk.vtkActor()
-        self.actor.SetMapper(mapper)
-        self.actor.GetProperty().SetColor(0.9, 0.9, 0.9)
-        self.actor.GetProperty().SetPointSize(2)
-        self.actor.GetProperty().SetInterpolationToPhong()
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(0.9, 0.9, 0.9)
+        actor.GetProperty().SetPointSize(2)
+        actor.GetProperty().SetInterpolationToPhong()
 
-        self.renderer.AddActor(self.actor)
-        self.renderer.ResetCamera()
-
-        if not self.vtk_initialized:
-            self.interactor.Initialize()
-            self.vtk_initialized = True
-
-        self.interactor.GetRenderWindow().Render()
-
-        return self.actor
+        return self.show_actor(actor)
 
     # =========================
     # Import File (UI)
@@ -190,37 +191,16 @@ class Geometry(RotationMixin):
             self.console.appendPlainText("=" * 50)
             self.console.appendPlainText(f"File imported ✅: {file_path}")
             self.console.appendPlainText("=" * 50)
+            kind = "Point cloud" if self.triangles is None else "Mesh"
+            self.console.appendPlainText(f"📊 Type: {kind}")
             self.console.appendPlainText(f"📊 Points: {len(self.points)}")
             self.console.appendPlainText(f"📊 Normals: {len(self.normals)}\n")
 
-            # Enable rotation controls
-            for widget in [
-                self.spinBox_X, self.spinBox_Y, self.spinBox_Z,
-                self.slider_X, self.slider_Y, self.slider_Z,
-                self.pushButton, self.btn_export
-            ]:
+            for widget in self.rotation_widgets() + self._data_buttons():
                 widget.setEnabled(True)
 
-            # Render mesh
-            self.mesh_actor = self.render_geometry()
-
-            # Reset rotation and UI
-            self.rotation_x = self.rotation_y = self.rotation_z = 0.0
-            self.prev_rotation_x = self.prev_rotation_y = self.prev_rotation_z = 0.0
-
-            for spin in [self.spinBox_X, self.spinBox_Y, self.spinBox_Z]:
-                spin.blockSignals(True)
-                spin.setValue(0)
-                spin.blockSignals(False)
-
-            for slider in [self.slider_X, self.slider_Y, self.slider_Z]:
-                slider.blockSignals(True)
-                slider.setValue(0)
-                slider.blockSignals(False)
-
-            # Reset camera
-            self.renderer.ResetCamera()
-            self.vtk_widget.GetRenderWindow().Render()
+            self.reset_rotation()
+            self.render_geometry()
 
         except Exception as e:
             self.console.appendPlainText(f"❌ Error: {str(e)}")
@@ -229,18 +209,16 @@ class Geometry(RotationMixin):
     # Export Data (UI)
     # =========================
     def export_data(self):
-        file_path_points, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Points", "points.txt", "Text Files (*.txt)"
-        )
-        file_path_normals, _ = QFileDialog.getSaveFileName(
-            self.main_window, "Save Normals", "normals.txt", "Text Files (*.txt)"
-        )
-        if not file_path_points or not file_path_normals:
+        if self.points is None:
             return
         try:
-            self.export_geometry(file_path_points, file_path_normals)
-            self.console.appendPlainText("File Exported ✅")
-            self.console.appendPlainText(f"{file_path_points}")
-            self.console.appendPlainText(f"{file_path_normals}")
+            paths = ask_save_point_cloud(
+                self.main_window, self.current_data(), "point_cloud.ply"
+            )
+            if not paths:
+                return
+            self.console.appendPlainText("File Exported ✅ (rotation applied)")
+            for path in paths:
+                self.console.appendPlainText(path)
         except Exception as e:
             self.console.appendPlainText(f"❌ Error in export: {str(e)}")
