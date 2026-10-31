@@ -143,8 +143,9 @@ re-running with identical input gives geometrically identical meshes
 
 `models/` contains test data used by `models/test.py`:
 
-* `points.txt` / `normals.txt` — matching point cloud + normals (x y z / nx ny nz).
-* `points_changed.txt` — a shuffled copy of `points.txt` **without** matching
-  normals; do not pair it with `normals.txt`.
+* `points.txt` / `normals.txt` — the Stanford bunny's 56,203 vertices and
+  their vertex normals (row-aligned, legacy two-file layout). Previously these
+  held every STL triangle corner separately (336,044 rows, ~83% duplicates);
+  the duplicates were merged and their normals averaged.
 * `Stanford_Bunny.stl`, `Raven Tools.stl` — example meshes.
 * `reconstructed_mesh.stl` / `.obj` — previous reconstruction outputs.
