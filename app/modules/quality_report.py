@@ -43,7 +43,7 @@ QHeaderView::section { background-color: #007ea7; color: #ffffff;
 """
 
 BUTTON_STYLE = """
-QPushButton { background-color: #003459; color: #ffffff; border: none;
+QPushButton { background-color: #007ea7; color: #ffffff; border: none;
               border-radius: 6px; padding: 6px 12px; font-weight: bold; }
 QPushButton:hover { background-color: #00a8e8; }
 QPushButton:pressed { background-color: #00263a; }
@@ -62,6 +62,7 @@ HISTORY_COLUMNS = (
     ("Reference", lambda r: r["metrics"]["reference"]),
     ("Algorithm", lambda r: ALGORITHM_NAMES.get(r["algorithm"], r["algorithm"])),
     ("Setting", lambda r: r["setting"]),
+    ("Data", lambda r: r.get("data") or "clean"),
     ("Voxel", lambda r: r["params"]["voxel"]),
     ("Density %", lambda r: round(r["params"]["density_q"] * 100, 2)),
     ("Smooth", lambda r: r["params"]["smooth"]),
@@ -79,12 +80,39 @@ HISTORY_COLUMNS = (
 )
 
 
+def sweep_summary(records, levels, algorithms, level_label):
+    """Level x algorithm table of a sweep -> (headers, rows)."""
+    headers = [level_label] + [ALGORITHM_NAMES[a] for a in algorithms]
+    rows = []
+    for level in levels:
+        row = [f"{level:g}"]
+        for algorithm in algorithms:
+            match = [r for r in records
+                     if r["level"] == level and r["algorithm"] == algorithm]
+            if not match:
+                row.append("failed")
+                continue
+            m = match[-1]["metrics"]
+            row.append(f"Chamfer {m['chamfer_pct']:.3f}% · F {m['f_score']:.3f}")
+        rows.append(row)
+    return headers, rows
+
+
+def table_to_markdown(headers, rows):
+    lines = ["| " + " | ".join(headers) + " |",
+             "|" + "---|" * len(headers)]
+    lines += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
 def flatten_record(record):
     """One CSV row with every parameter and metric of a run."""
     row = {
         "run": record["run"],
         "algorithm": record["algorithm"],
         "setting": record["setting"],
+        "data": record.get("data") or "clean",
+        "sweep_level": record.get("level", ""),
         "points": record["n_points"],
         "effective_depth": record["depth"],
     }
@@ -104,13 +132,14 @@ class QualityReportDialog(QDialog):
     evaluate_toggled = pyqtSignal(bool)
     heatmap_toggled = pyqtSignal(bool)
     clear_history_clicked = pyqtSignal()
+    sweep_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Quality Report")
         self.setStyleSheet(DIALOG_STYLE)
         self.resize(820, 700)
-        self._latest_rows = []
+        self._latest_markdown = ""
         self._history = []
 
         # ---------- Reference ----------
@@ -132,6 +161,12 @@ class QualityReportDialog(QDialog):
         self.check_evaluate = QCheckBox("Evaluate after every reconstruction")
         self.check_evaluate.setChecked(True)
         self.check_heatmap = QCheckBox("Color mesh by error (heatmap)")
+        self.btn_sweep = QPushButton("🧪 Robustness sweep…")
+        self.btn_sweep.setStyleSheet(BUTTON_STYLE)
+        options_row = QHBoxLayout()
+        options_row.addWidget(self.check_heatmap)
+        options_row.addStretch()
+        options_row.addWidget(self.btn_sweep)
 
         # ---------- Latest metrics ----------
         self.status_label = QLabel("No evaluation yet.")
@@ -155,7 +190,7 @@ class QualityReportDialog(QDialog):
             QHeaderView.ResizeToContents)
 
         # ---------- Export ----------
-        self.btn_copy = QPushButton("📋 Copy latest as Markdown")
+        self.btn_copy = QPushButton("📋 Copy table as Markdown")
         self.btn_save_csv = QPushButton("💾 Save history CSV…")
         self.btn_clear = QPushButton("🗑 Clear history")
         export_row = QHBoxLayout()
@@ -166,7 +201,7 @@ class QualityReportDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(ref_box)
         layout.addWidget(self.check_evaluate)
-        layout.addWidget(self.check_heatmap)
+        layout.addLayout(options_row)
         layout.addWidget(self.status_label)
         layout.addWidget(self.latest_table, 3)
         layout.addWidget(QLabel("Run history (compare parameter settings):"))
@@ -181,6 +216,7 @@ class QualityReportDialog(QDialog):
         self.btn_copy.clicked.connect(self.copy_markdown)
         self.btn_save_csv.clicked.connect(self.save_csv)
         self.btn_clear.clicked.connect(self.clear_history_clicked)
+        self.btn_sweep.clicked.connect(self.sweep_clicked)
         self._update_buttons()
 
     # =========================
@@ -195,20 +231,42 @@ class QualityReportDialog(QDialog):
 
     def show_record(self, record):
         """Show the latest evaluated run (``None`` clears the table)."""
-        if record is None:
-            self._latest_rows = []
-        else:
-            self._latest_rows = metric_rows(record["metrics"], record["timings"])
+        rows = []
+        if record is not None:
+            rows = metric_rows(record["metrics"], record["timings"])
             warning = (
                 "  ⚠ Large distance: is the reference aligned with the data?"
                 if record["metrics"]["likely_misaligned"] else ""
             )
-            self.set_status(f"Run #{record['run']}{warning}")
-        self.latest_table.setRowCount(len(self._latest_rows))
-        for row, (name, value) in enumerate(self._latest_rows):
-            self.latest_table.setItem(row, 0, QTableWidgetItem(name))
-            self.latest_table.setItem(row, 1, QTableWidgetItem(str(value)))
+            data = record.get("data")
+            self.set_status(
+                f"Run #{record['run']}" + (f" · data: {data}" if data else "")
+                + warning
+            )
+        self._show_table(["Metric", "Value"], [list(r) for r in rows])
+        self._latest_markdown = rows_to_markdown(rows) if rows else ""
         self._update_buttons()
+
+    def show_summary(self, title, headers, rows):
+        """Show a sweep's level x algorithm summary in the top table."""
+        self._show_table(headers, rows)
+        self._latest_markdown = table_to_markdown(headers, rows)
+        self.set_status(title)
+        self._update_buttons()
+
+    def _show_table(self, headers, rows):
+        table = self.latest_table
+        table.clear()
+        table.setColumnCount(len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for c, value in enumerate(row):
+                table.setItem(r, c, QTableWidgetItem(str(value)))
+        header = table.horizontalHeader()
+        for c in range(len(headers)):
+            header.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
 
     def set_history(self, history):
         self._history = list(history)
@@ -223,7 +281,7 @@ class QualityReportDialog(QDialog):
         self._update_buttons()
 
     def _update_buttons(self):
-        self.btn_copy.setEnabled(bool(self._latest_rows))
+        self.btn_copy.setEnabled(bool(self._latest_markdown))
         self.btn_save_csv.setEnabled(bool(self._history))
         self.btn_clear.setEnabled(bool(self._history))
 
@@ -231,8 +289,8 @@ class QualityReportDialog(QDialog):
     # Export
     # =========================
     def copy_markdown(self):
-        QApplication.clipboard().setText(rows_to_markdown(self._latest_rows))
-        self.set_status("Latest metrics copied to the clipboard as Markdown ✅")
+        QApplication.clipboard().setText(self._latest_markdown)
+        self.set_status("Table copied to the clipboard as Markdown ✅")
 
     def save_csv(self):
         path, _ = QFileDialog.getSaveFileName(

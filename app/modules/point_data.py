@@ -57,6 +57,7 @@ class PointCloudData:
     normals: Optional[np.ndarray] = None
     source: str = field(default="")
     reference: Optional[tuple] = None
+    note: str = ""          # how the data was degraded (e.g. "noise σ=0.5%")
 
     def __post_init__(self):
         self.points = np.asarray(self.points, dtype=float)[:, :3]
@@ -82,6 +83,7 @@ class PointCloudData:
             None if self.normals is None else self.normals.copy(),
             self.source,
             self.reference,
+            self.note,
         )
 
     def transformed(self, matrix):
@@ -92,7 +94,7 @@ class PointCloudData:
             vertices, triangles = self.reference
             vertices, _ = apply_transform(matrix, vertices)
             reference = (vertices, triangles)
-        return PointCloudData(points, normals, self.source, reference)
+        return PointCloudData(points, normals, self.source, reference, self.note)
 
     def with_normals(self, voxel_size=0.0):
         """Copy that is guaranteed to have (oriented) normals."""
@@ -103,7 +105,7 @@ class PointCloudData:
         estimate_oriented_normals(pcd, voxel_size=voxel_size)
         return PointCloudData(
             self.points.copy(), np.asarray(pcd.normals).copy(), self.source,
-            self.reference,
+            self.reference, self.note,
         )
 
     # =========================

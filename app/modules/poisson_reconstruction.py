@@ -27,6 +27,7 @@ while parameters are being tuned (live reconstruction, debounced).
 import hashlib
 import math
 import os
+import threading
 import time
 from collections import OrderedDict
 
@@ -37,6 +38,7 @@ from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QLabel
 from vtk.util import numpy_support
 
+from modules.degradation import SWEEP_KINDS, sweep_settings
 from modules.geometry_utils import (
     normalize,
     orient_consistently,
@@ -49,7 +51,12 @@ from modules.point_data import (
     make_scrollable,
 )
 from modules.quality_metrics import evaluate
-from modules.quality_report import ALGORITHM_NAMES, QualityReportDialog
+from modules.quality_report import (
+    ALGORITHM_NAMES,
+    QualityReportDialog,
+    sweep_summary,
+)
+from modules.robustness_dialogs import SweepDialog
 from modules.vtk_controls import VTKViewport, RotationMixin
 
 
@@ -70,12 +77,15 @@ DEFAULT_FACTORS = {BALL_PIVOTING: 2.0, ALPHA_SHAPE: 10.0}
 
 
 class ReconstructionWorker(QThread):
-    """Runs a reconstruction / evaluation job off the UI thread.
+    """Runs a reconstruction / evaluation / sweep job off the UI thread.
 
-    Emits ``succeeded(result)`` or ``failed(error_message)``; the built-in
-    ``QThread.finished`` fires afterwards and is used for cleanup.
+    ``job(progress)`` may call ``progress(step)`` for intermediate results
+    (emitted as ``progress``).  Emits ``succeeded(result)`` or
+    ``failed(error_message)``; the built-in ``QThread.finished`` fires
+    afterwards and is used for cleanup.
     """
 
+    progress = pyqtSignal(object)
     succeeded = pyqtSignal(object)
     failed = pyqtSignal(str)
 
@@ -85,7 +95,7 @@ class ReconstructionWorker(QThread):
 
     def run(self):
         try:
-            result = self._job()
+            result = self._job(self.progress.emit)
         except Exception as e:
             self.failed.emit(str(e))
             return
@@ -335,6 +345,46 @@ def build_mesh(params, points, normals, reference=None, run_evaluation=False):
     return result
 
 
+def run_sweep(points, normals, reference, base_params, factors, kind, levels,
+              algorithms, seed, cancel, progress, base_note=""):
+    """Robustness sweep: degrade the data at every level, reconstruct with
+    every algorithm and evaluate.  Quality is always measured against the
+    ground truth - the reference mesh, or the CLEAN input points - so it
+    shows how much each algorithm suffers from the perturbation.
+
+    ``progress(step)`` is called after every run; ``cancel`` (an Event) is
+    checked between runs.
+    """
+    total = len(levels) * len(algorithms)
+    done = 0
+    for level in levels:
+        degradation = sweep_settings(kind, level, seed)
+        d_points, d_normals = degradation.apply(points, normals)
+        note = degradation.describe()
+        if base_note:
+            note = f"{base_note} + {note}"
+        for algorithm in algorithms:
+            if cancel.is_set():
+                return {"cancelled": True, "done": done, "total": total}
+            params = dict(base_params, algorithm=algorithm,
+                          factor=factors.get(algorithm))
+            step = {"level": level, "algorithm": algorithm, "data": note,
+                    "params": params, "n_points": len(d_points)}
+            try:
+                result = build_mesh(params, d_points, d_normals)
+                evaluation = evaluate_mesh(result["mesh"], reference, points, normals)
+                result["timings"]["evaluate"] = evaluation.pop("eval_time")
+                step.update(metrics=evaluation["metrics"],
+                            timings=result["timings"],
+                            depth=result["depth"], setting=result["setting"])
+            except Exception as e:
+                step["error"] = str(e)
+            done += 1
+            step.update(done=done, total=total)
+            progress(step)
+    return {"cancelled": False, "done": done, "total": total}
+
+
 COMBO_STYLE = """
 QComboBox { background-color: #ffffff; color: #00171f; border: none;
             border-radius: 6px; padding: 6px 10px; font-size: 13px;
@@ -416,6 +466,8 @@ class PoissonReconstruction(RotationMixin):
         self.history = []
         self._run_counter = 0
         self._scalar_bar = None
+        self.data_note = ""           # how the loaded data was degraded
+        self._sweep = None            # state of a running robustness sweep
 
         # Console + VTK render window + axes
         VTKViewport(self, main_window.frame_console_6, main_window.frame_view_6)
@@ -473,7 +525,12 @@ class PoissonReconstruction(RotationMixin):
         self.report.evaluate_toggled.connect(self.set_evaluate_enabled)
         self.report.heatmap_toggled.connect(self.set_heatmap_enabled)
         self.report.clear_history_clicked.connect(self.clear_history)
+        self.report.sweep_clicked.connect(self.show_sweep_dialog)
         self._update_reference_label()
+
+        self.sweep_dialog = SweepDialog(main_window)
+        self.sweep_dialog.run_requested.connect(self.start_sweep)
+        self.sweep_dialog.cancel_requested.connect(self.cancel_sweep)
 
         self.btn_quality = add_button_after(self.btn_export, "📊 Quality Report")
         self.btn_quality.clicked.connect(self.show_report)
@@ -614,8 +671,11 @@ class PoissonReconstruction(RotationMixin):
         self.load_data(data, f"Received from another tab ✅: {data.source}")
 
     def load_data(self, data, title):
+        if self._sweep is not None:
+            self.cancel_sweep()       # its results belong to the old data
         self.points = data.points.copy()
         self.normals = data.normals.copy()
+        self.data_note = data.note
         self.mesh_o3d = None
         self._mesh_arrays = None
         self._data_generation += 1
@@ -643,6 +703,8 @@ class PoissonReconstruction(RotationMixin):
             self.console.appendPlainText(
                 "📐 Ground-truth mesh received - quality is measured against it"
             )
+        if self.data_note:
+            self.console.appendPlainText(f"🧪 Data: {self.data_note}")
 
         self._set_controls_enabled(True)
         self.btn_export.setEnabled(False)
@@ -705,7 +767,7 @@ class PoissonReconstruction(RotationMixin):
             "reference_version": self._reference_version,
         }
 
-        def job():
+        def job(progress):
             result = build_mesh(params, points, normals, reference, run_evaluation)
             result.update(tags)
             return result
@@ -733,7 +795,7 @@ class PoissonReconstruction(RotationMixin):
             "reference_version": self._reference_version,
         }
 
-        def job():
+        def job(progress):
             result = evaluate_mesh(mesh, reference, points, normals)
             result["timings"] = {"evaluate": result.pop("eval_time")}
             result.update(tags)
@@ -743,12 +805,16 @@ class PoissonReconstruction(RotationMixin):
 
     def _launch(self, job):
         self._worker = ReconstructionWorker(job, self.vtk_widget)
+        self._worker.progress.connect(self._on_sweep_step)
         self._worker.succeeded.connect(self._on_job_done)
         self._worker.failed.connect(self._on_reconstruction_failed)
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.start()
 
     def _on_job_done(self, result):
+        if result["kind"] == "sweep_end":
+            self._finish_sweep(result)
+            return
         if result["generation"] != self._data_generation:
             return  # result for data that has since been replaced
 
@@ -799,6 +865,8 @@ class PoissonReconstruction(RotationMixin):
 
     def _on_reconstruction_failed(self, message):
         self.console.appendPlainText(f"❌ Reconstruction error: {message}")
+        if self._sweep is not None:
+            self._finish_sweep({"cancelled": True})
 
     def _on_worker_finished(self):
         # QThread.finished: the thread has fully stopped - safe to release
@@ -812,22 +880,28 @@ class PoissonReconstruction(RotationMixin):
     # =========================
     # Quality evaluation
     # =========================
+    def _add_record(self, **fields):
+        """Append one evaluated run to the history (and its table)."""
+        self._run_counter += 1
+        record = dict(fields, run=self._run_counter)
+        self.history.append(record)
+        self.report.set_history(self.history)
+        return record
+
     def _record_evaluation(self, metrics, eval_timings):
         timings = dict(self._last_build["timings"])
         timings.update(eval_timings)
-        self._run_counter += 1
-        record = {
-            "run": self._run_counter,
-            "params": self._last_build["params"],
-            "algorithm": self._last_build["algorithm"],
-            "depth": self._last_build["depth"],
-            "setting": self._last_build["setting"],
-            "n_points": len(self.points),
-            "metrics": metrics,
-            "timings": timings,
-        }
+        record = self._add_record(
+            params=self._last_build["params"],
+            algorithm=self._last_build["algorithm"],
+            depth=self._last_build["depth"],
+            setting=self._last_build["setting"],
+            n_points=len(self.points),
+            metrics=metrics,
+            timings=timings,
+            data=self.data_note,
+        )
         self.last_record = record
-        self.history.append(record)
 
         against = "mesh" if metrics["reference"] == "mesh" else "points"
         self.console.appendPlainText(
@@ -842,7 +916,105 @@ class PoissonReconstruction(RotationMixin):
                 "⚠ Large distances: is the reference aligned with the data?"
             )
         self.report.show_record(record)
-        self.report.set_history(self.history)
+
+    # =========================
+    # Robustness sweep
+    # =========================
+    def show_sweep_dialog(self):
+        self.sweep_dialog.show()
+        self.sweep_dialog.raise_()
+
+    def start_sweep(self, kind, levels, algorithms, seed):
+        if self.points is None:
+            self.sweep_dialog.set_status("❌ Load data in this tab first.")
+            return
+        if self._sweep is not None:
+            return
+        if self._worker is not None:
+            self.sweep_dialog.set_status(
+                "⏳ A reconstruction is running - try again when it finishes.")
+            return
+        self._live_timer.stop()
+
+        label = SWEEP_KINDS[kind][0]
+        cancel = threading.Event()
+        self._sweep = {
+            "cancel": cancel, "kind": kind, "label": label,
+            "levels": list(levels), "algorithms": list(algorithms),
+            "records": [], "failures": [],
+            "generation": self._data_generation,
+        }
+        self.sweep_dialog.set_running(True)
+        self.sweep_dialog.set_status("Starting…")
+        names = ", ".join(ALGORITHM_LABELS[a] for a in algorithms)
+        self.console.appendPlainText(
+            f"🧪 Sweep: {label} = {', '.join(f'{v:g}' for v in levels)} × {names}"
+        )
+        if self.reference is None:
+            self.console.appendPlainText(
+                "   (no reference mesh: measured against the clean input points)"
+            )
+
+        args = (self.points.copy(), self.normals.copy(), self.reference,
+                self._current_params(), dict(self.factors), kind, list(levels),
+                list(algorithms), seed, cancel)
+        base_note = self.data_note
+        generation = self._data_generation
+
+        def job(progress):
+            result = run_sweep(*args, progress, base_note=base_note)
+            result.update(kind="sweep_end", generation=generation)
+            return result
+
+        self._launch(job)
+
+    def cancel_sweep(self):
+        if self._sweep is not None:
+            self._sweep["cancel"].set()
+            self.sweep_dialog.set_status("Cancelling after the current run…")
+
+    def _on_sweep_step(self, step):
+        sweep = self._sweep
+        if sweep is None or sweep["generation"] != self._data_generation:
+            return
+        name = ALGORITHM_LABELS[step["algorithm"]]
+        if "error" in step:
+            sweep["failures"].append(step)
+            self.console.appendPlainText(
+                f"❌ {name} · {step['data']}: {step['error']}")
+        else:
+            record = self._add_record(
+                params=step["params"], algorithm=step["algorithm"],
+                depth=step["depth"], setting=step["setting"],
+                n_points=step["n_points"], metrics=step["metrics"],
+                timings=step["timings"], data=step["data"],
+                level=step["level"],
+            )
+            sweep["records"].append(record)
+            m = step["metrics"]
+            self.console.appendPlainText(
+                f"🧪 {name} · {step['data']}: Chamfer {m['chamfer_pct']:.3f}% · "
+                f"F {m['f_score']:.3f}")
+        text = f"Sweep {step['done']}/{step['total']}: {name} · {step['data']}"
+        self.sweep_dialog.set_status(text)
+        self.report.set_status(text)
+
+    def _finish_sweep(self, result):
+        sweep, self._sweep = self._sweep, None
+        self.sweep_dialog.set_running(False)
+        if sweep is None:
+            return
+        state = "cancelled" if result.get("cancelled") else "finished"
+        title = f"Sweep {state}: {len(sweep['records'])} runs"
+        if sweep["failures"]:
+            title += f", {len(sweep['failures'])} failed"
+        headers, rows = sweep_summary(
+            sweep["records"], sweep["levels"], sweep["algorithms"], sweep["label"]
+        )
+        self.report.show_summary(title, headers, rows)
+        self.sweep_dialog.set_status(title + " - summary in the Quality Report.")
+        self.console.appendPlainText(f"🧪 {title}")
+        self.show_report()
 
     def show_report(self):
         self.report.show()

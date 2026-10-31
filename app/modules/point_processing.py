@@ -5,23 +5,27 @@ import open3d as o3d
 import vtk
 from PyQt5.QtCore import QTimer
 
+from modules.degradation import Degradation
 from modules.geometry_utils import normalize, polydata_from_numpy
 from modules.point_data import (
     PointCloudData,
     add_button_after,
     ask_open_point_cloud,
     ask_save_point_cloud,
+    make_scrollable,
 )
+from modules.robustness_dialogs import DegradeDialog
 from modules.vtk_controls import VTKViewport, RotationMixin
 
 
 class Processing(RotationMixin):
-    """Import a point cloud (or receive one from the Import tab), shuffle
-    the points, reduce the density with voxel downsampling, then export
-    it or send it to the Reconstruction tab.
+    """Import a point cloud (or receive one from the Import tab), reduce
+    the density with voxel downsampling, degrade it on purpose (noise,
+    holes, ... for robustness tests), shuffle it, then export it or send it
+    to the Reconstruction tab.
 
-    Points and normals are always kept as matching pairs: shuffling
-    permutes both, downsampling averages both.
+    Pipeline: original -> voxel -> degradation -> shuffle.  Points and
+    normals are always kept as matching pairs.
     """
 
     VOXEL_DEBOUNCE_MS = 300
@@ -49,6 +53,7 @@ class Processing(RotationMixin):
         self.shuffled = False
         self.source_name = ""
         self.reference = None
+        self.degradation = Degradation()
         self.init_rotation_state()
 
         # Console + VTK render window + axes
@@ -80,6 +85,16 @@ class Processing(RotationMixin):
         )
         self.btn_send_reconstruction.clicked.connect(self.send_data)
 
+        self.btn_degrade = add_button_after(
+            self.random_point_btn, "🧪 Degrade data…"
+        )
+        self.degrade_dialog = DegradeDialog(main_window)
+        self.degrade_dialog.applied.connect(self.set_degradation)
+        self.btn_degrade.clicked.connect(self.show_degrade_dialog)
+
+        # The panel grew: let it scroll on small screens
+        make_scrollable(self.btn_export.parentWidget())
+
         # Disable controls until a file is imported
         self._set_controls_enabled(False)
 
@@ -95,8 +110,23 @@ class Processing(RotationMixin):
         for widget in self.rotation_widgets() + (
             self.btn_export, self.btn_send_reconstruction,
             self.Point_density_spinbox, self.random_point_btn,
+            self.btn_degrade,
         ):
             widget.setEnabled(enabled)
+
+    # =========================
+    # Degradation (robustness tests)
+    # =========================
+    def show_degrade_dialog(self):
+        self.degrade_dialog.set_settings(self.degradation)
+        self.degrade_dialog.show()
+        self.degrade_dialog.raise_()
+
+    def set_degradation(self, degradation):
+        self.degradation = degradation
+        self.degrade_dialog.set_settings(degradation)
+        self.console.appendPlainText(f"🧪 Data: {degradation.describe()}")
+        self.update_voxel_points()
 
     # =========================
     # Randomize Points
@@ -141,13 +171,22 @@ class Processing(RotationMixin):
                 normalize(np.asarray(pcd.normals)) if pcd.has_normals() else None
             )
 
+        # Deliberate degradation (seeded, so identical on every rebuild)
+        self.points_changed, self.normals_changed = self.degradation.apply(
+            self.points_changed, self.normals_changed
+        )
+
         # Keep the shuffled state when the density changes
         if self.shuffled:
             self._shuffle()
 
         label = "original" if voxel_size <= 0 else f"{voxel_size:.3f}"
+        extra = (
+            "" if self.degradation.is_identity
+            else f" | {self.degradation.describe()}"
+        )
         self.console.appendPlainText(
-            f"✅ Voxel density {label} → {len(self.points_changed)} points"
+            f"✅ Voxel density {label}{extra} → {len(self.points_changed)} points"
         )
         self.render_points(reset_camera=False)
 
@@ -190,6 +229,8 @@ class Processing(RotationMixin):
         self.shuffled = False
         self.source_name = data.source
         self.reference = data.reference   # ground-truth mesh, if known
+        self.degradation = Degradation(seed=self.degradation.seed)
+        self.degrade_dialog.set_settings(self.degradation)
 
         self.console.clear()
         self.console.appendPlainText("=" * 50)
@@ -230,9 +271,10 @@ class Processing(RotationMixin):
     def current_data(self):
         """Modified points + normals (estimated if missing) with the
         displayed rotation applied."""
+        note = "" if self.degradation.is_identity else self.degradation.describe()
         data = PointCloudData(
             self.points_changed, self.normals_changed, self.source_name,
-            self.reference,
+            self.reference, note,
         )
         if not data.has_normals:
             self.console.appendPlainText("⏳ Estimating normals…")

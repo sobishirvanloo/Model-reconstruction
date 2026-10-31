@@ -60,6 +60,22 @@ of the diagonal), i.e. the reference is probably not aligned.
 With only input points as reference, accuracy is pessimistic where the
 points are sparse — prefer a reference mesh for final numbers.
 
+### Robustness experiments
+
+**By hand — *Processing* tab → 🧪 Degrade data…**: add position noise
+(σ in % of the bbox diagonal), normal noise (σ in degrees), spherical holes,
+or non-uniform sampling (density falling along an axis). Settings are seeded
+(reproducible) and applied after voxel downsampling. The ground-truth mesh
+that travelled with the data stays clean, and the degradation is recorded in
+the *Data* column of the run history.
+
+**Automatically — *Quality Report* → 🧪 Robustness sweep…**: pick one
+perturbation, a list of levels and the algorithms; every combination is
+reconstructed and evaluated against the ground truth (or the clean input
+points). The result is a level × algorithm table (copy as Markdown) plus one
+history row per run (save as CSV). Runs can be cancelled; a failing run is
+reported without stopping the sweep.
+
 ### Moving data between tabs
 
 The **➡ Send to …** buttons hand the points and their normals to the next tab
