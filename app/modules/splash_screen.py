@@ -27,10 +27,11 @@ class SplashScreen(QWidget):
     then fades out and hands control over to the main window.
     """
 
-    BG_COLOR = "#00171f"
-    ACCENT = "#00a8e8"
-    ACCENT_DARK = "#007ea7"
-    TRACK = "#003459"
+    # Same palette as the light theme (modules/theme.py)
+    BG_COLOR = "#ffffff"
+    ACCENT = "#0a78c2"
+    ACCENT_DARK = "#5d6b7b"
+    TRACK = "#e1e8ef"
 
     NUM_STEPS = 100          # total progress steps
     STEP_INTERVAL_MS = 20    # 20 ms * 100 = 2 s minimum loading animation

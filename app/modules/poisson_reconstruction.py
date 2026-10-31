@@ -35,7 +35,15 @@ import numpy as np
 import open3d as o3d
 import vtk
 from PyQt5.QtCore import QThread, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QLabel
+from PyQt5.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QLabel,
+    QStyle,
+)
+
+from modules import settings
 from vtk.util import numpy_support
 
 from modules.degradation import SWEEP_KINDS, sweep_settings
@@ -46,6 +54,7 @@ from modules.geometry_utils import (
 )
 from modules.point_data import (
     add_button_after,
+    add_section,
     ask_open_point_cloud,
     insert_widget,
     make_scrollable,
@@ -57,7 +66,7 @@ from modules.quality_report import (
     sweep_summary,
 )
 from modules.robustness_dialogs import SweepDialog
-from modules.vtk_controls import VTKViewport, RotationMixin
+from modules.vtk_controls import TabMixin, VTKViewport
 
 
 MAX_DEPTH = 12
@@ -385,16 +394,29 @@ def run_sweep(points, normals, reference, base_params, factors, kind, levels,
     return {"cancelled": False, "done": done, "total": total}
 
 
-COMBO_STYLE = """
-QComboBox { background-color: #ffffff; color: #00171f; border: none;
-            border-radius: 6px; padding: 6px 10px; font-size: 13px;
-            font-weight: bold; }
-QComboBox QAbstractItemView { background-color: #ffffff; color: #00171f;
-                              selection-background-color: #00a8e8; }
-"""
+PARAMETER_TIPS = {
+    "combo_algorithm": "Poisson: smooth closed surface, robust to noise.\n"
+                       "Ball Pivoting: passes exactly through the points.\n"
+                       "Alpha Shape: fastest, but many small pieces.",
+    "spinBox_depth": "Octree depth: higher = more detail, slower (8–10 typical)",
+    "doubleSpinBox_width": "Finest octree cell size. 0 = use Depth; "
+                           "a value > 0 overrides Depth.",
+    "doubleSpinBox_scale": "Size of the reconstruction cube relative to the "
+                           "data's bounding box (1.1 avoids cut edges)",
+    "checkBox_linear_fit": "Place vertices by linear interpolation "
+                           "(slightly more accurate, slower)",
+    "checkBox_preprocess": "Remove outliers and orient the normals "
+                           "consistently before reconstructing",
+    "doubleSpinBox_voxel": "Downsample the input first (0 = keep every point)",
+    "doubleSpinBox_density": "Remove the least supported part of the Poisson "
+                             "surface (% of vertices with the lowest density)",
+    "checkBox_crop": "Cut the Poisson surface to the data's bounding box "
+                     "(removes 'bubbles')",
+    "spinBox_smooth": "Taubin smoothing iterations (0 = off)",
+}
 
 
-class PoissonReconstruction(RotationMixin):
+class PoissonReconstruction(TabMixin):
     """Import points + normals, reconstruct a mesh (Poisson, Ball Pivoting
     or Alpha Shape), measure its quality and export it."""
 
@@ -408,7 +430,6 @@ class PoissonReconstruction(RotationMixin):
         self.btn_import = main_window.btn_import_pointsandnormals
         self.btn_export = main_window.btn_export_6
         self.pushButton = main_window.pushButton_6
-        self.btn_import.setText("📂 Import Point Cloud")
 
         # Rotation controls
         self.spinBox_X = main_window.spinBox_X_6
@@ -469,8 +490,13 @@ class PoissonReconstruction(RotationMixin):
         self.data_note = ""           # how the loaded data was degraded
         self._sweep = None            # state of a running robustness sweep
 
-        # Console + VTK render window + axes
-        VTKViewport(self, main_window.frame_console_6, main_window.frame_view_6)
+        # Console + toolbar + VTK render window + axes
+        VTKViewport(
+            self, main_window.frame_console_6, main_window.frame_view_6,
+            empty_hint="Drop a point cloud with normals here\n"
+                       "or press Ctrl+O to open one\n\n"
+                       "(or send one from the Import mesh / Processing tab)",
+        )
 
         # ---------- Configure parameter widgets ----------
         self.spinBox_depth.setMinimum(1)
@@ -481,9 +507,6 @@ class PoissonReconstruction(RotationMixin):
         self.doubleSpinBox_width.setMaximum(100.0)
         self.doubleSpinBox_width.setSingleStep(0.5)
         self.doubleSpinBox_width.setValue(0.0)          # 0 = use depth
-        self.doubleSpinBox_width.setToolTip(
-            "Finest octree cell size. 0 = use Depth; > 0 overrides Depth."
-        )
 
         self.doubleSpinBox_scale.setDecimals(2)
         self.doubleSpinBox_scale.setMinimum(0.1)
@@ -532,30 +555,56 @@ class PoissonReconstruction(RotationMixin):
         self.sweep_dialog.run_requested.connect(self.start_sweep)
         self.sweep_dialog.cancel_requested.connect(self.cancel_sweep)
 
-        self.btn_quality = add_button_after(self.btn_export, "📊 Quality Report")
+        self.btn_quality = add_button_after(self.btn_export, "Quality report")
         self.btn_quality.clicked.connect(self.show_report)
+
+        # ---------- Connect buttons ----------
+        self.btn_import.clicked.connect(lambda: self.import_files())
+        self.btn_export.clicked.connect(self.export_data)
+
+        self.setup_rotation_controls()
+        self._connect_live_controls()
+        self._build_panel()
 
         # The parameter panel is taller than a laptop screen: let it scroll
         make_scrollable(self.btn_export.parentWidget())
 
-        # ---------- Connect buttons ----------
-        self.btn_import.clicked.connect(self.import_files)
-        self.btn_export.clicked.connect(self.export_data)
-        self.pushButton.clicked.connect(self.apply_rotation)
-
-        self.setup_rotation_controls()
-        self._connect_live_controls()
-
         self._set_controls_enabled(False)
         self.btn_export.setEnabled(False)
 
-        self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText("Surface Reconstruction ready ✅")
-        self.console.appendPlainText("=" * 50)
         self.console.appendPlainText(
-            "📁 Import a point cloud with normals (.ply / .pcd / .txt / .csv"
-            " / .npy) or send one from another tab"
+            "Ready. Open a point cloud with normals (.ply / .pcd / .txt / .csv"
+            " / .npy) or send one from another tab."
         )
+
+    def _build_panel(self):
+        """Section headers, icons, tooltips and the file label."""
+        mw = self.main_window
+        self.btn_import.setText("Open point cloud…")
+        self.decorate(self.btn_import, QStyle.SP_DialogOpenButton,
+                      "Open a point cloud with normals (Ctrl+O)", "primary")
+        self.file_label = QLabel("No data loaded")
+        self.file_label.setProperty("role", "hint")
+        self.file_label.setWordWrap(True)
+        insert_widget(self.btn_import, self.file_label, after=True)
+
+        self.btn_export.setText("Export mesh…")
+        self.decorate(self.btn_export, QStyle.SP_DialogSaveButton,
+                      "Save the mesh as STL or OBJ, rotation applied (Ctrl+S)",
+                      "primary")
+        self.decorate(self.btn_quality, QStyle.SP_FileDialogDetailedView,
+                      "Quality metrics, error heatmap, run history and "
+                      "robustness sweeps (Ctrl+R)")
+
+        add_section(self.btn_import, "File")
+        add_section(mw.label_x_6, "Rotation")
+        add_section(self.label_algorithm, "Reconstruction")
+        add_section(mw.label_preproc, "Preprocessing")
+        add_section(mw.label_density, "Post-processing")
+        add_section(self.btn_export, "Output")
+        mw.label_preproc.hide()       # the section header says it already
+        for name, tip in PARAMETER_TIPS.items():
+            getattr(self, name).setToolTip(tip)
 
     # =========================
     # Algorithm selection
@@ -563,21 +612,13 @@ class PoissonReconstruction(RotationMixin):
     def _build_algorithm_controls(self, main_window):
         """Algorithm menu + one size factor (ball radius / alpha), placed
         above the Poisson parameters in the side panel."""
-        label_style = main_window.Depth.styleSheet()
-
         self.label_algorithm = QLabel("Algorithm")
-        self.label_algorithm.setStyleSheet(label_style)
         self.combo_algorithm = QComboBox()
-        self.combo_algorithm.setStyleSheet(COMBO_STYLE)
         for key, label in ALGORITHM_LABELS.items():
             self.combo_algorithm.addItem(label, key)
 
         self.label_factor = QLabel()
-        self.label_factor.setStyleSheet(label_style)
         self.doubleSpinBox_factor = QDoubleSpinBox()
-        self.doubleSpinBox_factor.setStyleSheet(
-            self.doubleSpinBox_scale.styleSheet()
-        )
         self.doubleSpinBox_factor.setDecimals(2)
         self.doubleSpinBox_factor.setRange(0.5, 50.0)
         self.doubleSpinBox_factor.setSingleStep(0.5)
@@ -646,29 +687,30 @@ class PoissonReconstruction(RotationMixin):
     # =========================
     # Import Files
     # =========================
-    def import_files(self):
-        """Prompt for a point cloud with normals (one file, or a points
-        file plus a legacy normals file), then reconstruct."""
+    def import_files(self, path=None):
+        """Open a point cloud with normals (one file, or a points file plus
+        a legacy normals file), then reconstruct.  ``path`` skips the first
+        dialog (drag & drop, recent files)."""
         try:
             data = ask_open_point_cloud(
-                self.main_window, "Import Point Cloud with Normals",
-                normals_required=True,
+                self.main_window, "Open Point Cloud with Normals",
+                normals_required=True, path=path,
             )
         except Exception as e:
-            self.console.appendPlainText(f"❌ Import error: {str(e)}")
+            name = os.path.basename(path) if path else "the file"
+            self.notify(f"❌ Could not open {name}: {e}", "error", dialog=True)
             return
         if data is None:
-            self.console.appendPlainText(
-                "❌ Import cancelled (points with normals are required)"
-            )
+            self.notify("Open cancelled: points with normals are required",
+                        "warning")
             return
-        self.load_data(data, f"File imported ✅: {data.source}")
+        self.load_data(data, f"✅ Opened {data.source}")
 
     def receive_data(self, data):
         """Called by the main window when another tab sends a cloud."""
         if not data.has_normals:
             data = data.with_normals()
-        self.load_data(data, f"Received from another tab ✅: {data.source}")
+        self.load_data(data, f"✅ Received from another tab: {data.source}")
 
     def load_data(self, data, title):
         if self._sweep is not None:
@@ -694,11 +736,17 @@ class PoissonReconstruction(RotationMixin):
         self.report.set_status("Waiting for the reconstruction…")
 
         self.console.clear()
-        self.console.appendPlainText("=" * 50)
         self.console.appendPlainText(title)
-        self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText(f"📊 Points:  {len(self.points)}")
-        self.console.appendPlainText(f"📊 Normals: {len(self.normals)}")
+        self.console.appendPlainText(f"   {len(self.points):,} points with normals")
+        self.source_name = data.source
+        self.file_label.setText(
+            f"{data.source or 'Received data'}\n{len(self.points):,} points"
+            + (f"\n{self.data_note}" if self.data_note else "")
+            + ("\nGround truth: original mesh" if self.reference is not None else ""))
+        self.file_label.setProperty("role", "file")
+        self.file_label.style().polish(self.file_label)
+        self.set_tab_info(file=data.source, points=len(self.points), triangles=None)
+        self.notify(f"Loaded {data.source or 'data'} - reconstructing…", "success")
         if self.reference is not None:
             self.console.appendPlainText(
                 "📐 Ground-truth mesh received - quality is measured against it"
@@ -772,7 +820,7 @@ class PoissonReconstruction(RotationMixin):
             result.update(tags)
             return result
 
-        self._launch(job)
+        self._launch(job, f"Reconstructing ({ALGORITHM_LABELS[self.algorithm]})…")
 
     def _start_evaluation(self):
         """Evaluate the current mesh again (e.g. after a reference change)
@@ -801,9 +849,12 @@ class PoissonReconstruction(RotationMixin):
             result.update(tags)
             return result
 
-        self._launch(job)
+        self._launch(job, "Evaluating quality…")
 
-    def _launch(self, job):
+    def _launch(self, job, busy_text):
+        set_busy = getattr(self.main_window, "set_busy", None)
+        if set_busy:
+            set_busy(True, busy_text)
         self._worker = ReconstructionWorker(job, self.vtk_widget)
         self._worker.progress.connect(self._on_sweep_step)
         self._worker.succeeded.connect(self._on_job_done)
@@ -854,17 +905,20 @@ class PoissonReconstruction(RotationMixin):
 
         if result["kind"] == "build":
             self._render_mesh()
-            self.console.appendPlainText(
+            self.notify(
                 f"✅ Reconstruction done | vertices: {len(result['vertices'])} | "
-                f"triangles: {len(result['triangles'])}"
+                f"triangles: {len(result['triangles'])}", "success"
             )
+            self.set_tab_info(points=len(self.points),
+                              triangles=len(result["triangles"]))
             # A newer job may already be queued; export only the latest
             self.btn_export.setEnabled(not self._pending_run)
         elif self.heatmap_enabled:
             self._render_mesh()
 
     def _on_reconstruction_failed(self, message):
-        self.console.appendPlainText(f"❌ Reconstruction error: {message}")
+        # Status bar only: while tuning live, a dialog per failure would nag
+        self.notify(f"❌ Reconstruction failed: {message}", "error")
         if self._sweep is not None:
             self._finish_sweep({"cancelled": True})
 
@@ -876,6 +930,9 @@ class PoissonReconstruction(RotationMixin):
             self._start_worker()
         elif self._pending_eval:
             self._start_evaluation()
+        set_busy = getattr(self.main_window, "set_busy", None)
+        if set_busy and self._worker is None:
+            set_busy(False)       # nothing new was started
 
     # =========================
     # Quality evaluation
@@ -966,7 +1023,10 @@ class PoissonReconstruction(RotationMixin):
             result.update(kind="sweep_end", generation=generation)
             return result
 
-        self._launch(job)
+        self._launch(job, "Robustness sweep…")
+        set_progress = getattr(self.main_window, "set_progress", None)
+        if set_progress:
+            set_progress(0, len(levels) * len(algorithms))
 
     def cancel_sweep(self):
         if self._sweep is not None:
@@ -998,6 +1058,9 @@ class PoissonReconstruction(RotationMixin):
         text = f"Sweep {step['done']}/{step['total']}: {name} · {step['data']}"
         self.sweep_dialog.set_status(text)
         self.report.set_status(text)
+        set_progress = getattr(self.main_window, "set_progress", None)
+        if set_progress:
+            set_progress(step["done"], step["total"], text)
 
     def _finish_sweep(self, result):
         sweep, self._sweep = self._sweep, None
@@ -1013,7 +1076,7 @@ class PoissonReconstruction(RotationMixin):
         )
         self.report.show_summary(title, headers, rows)
         self.sweep_dialog.set_status(title + " - summary in the Quality Report.")
-        self.console.appendPlainText(f"🧪 {title}")
+        self.notify(f"🧪 {title}", "warning" if sweep["failures"] else "success")
         self.show_report()
 
     def show_report(self):
@@ -1034,10 +1097,11 @@ class PoissonReconstruction(RotationMixin):
     def load_reference(self):
         path, _ = QFileDialog.getOpenFileName(
             self.report, "Load Reference Mesh (same coordinates as the data)",
-            "", MESH_FILTER
+            settings.last_dir(), MESH_FILTER
         )
         if not path:
             return
+        settings.remember_path(path)
         mesh = o3d.io.read_triangle_mesh(path)
         if len(mesh.triangles) == 0:
             self.report.set_status(f"❌ {os.path.basename(path)}: no triangles")
@@ -1097,7 +1161,6 @@ class PoissonReconstruction(RotationMixin):
 
             actor = vtk.vtkActor()
             actor.SetMapper(mapper)
-            actor.GetProperty().SetColor(0.2, 0.6, 0.9)
             actor.GetProperty().SetAmbient(0.1)
             actor.GetProperty().SetDiffuse(0.8)
             actor.GetProperty().SetSpecular(0.3)
@@ -1116,11 +1179,12 @@ class PoissonReconstruction(RotationMixin):
             self._set_scalar_bar(mapper if show_errors else None)
 
             # Keep the camera while tuning parameters; reset after import
-            self.show_actor(actor, reset_camera=self._reset_camera_next)
+            self.show_actor(actor, reset_camera=self._reset_camera_next,
+                            kind="mesh")
             self._reset_camera_next = False
 
         except Exception as e:
-            self.console.appendPlainText(f"❌ Render error: {str(e)}")
+            self.notify(f"❌ Render error: {e}", "error")
 
     def _apply_heatmap(self, polydata, mapper):
         """Color vertices by their distance to the reference (blue = 0,
@@ -1149,9 +1213,7 @@ class PoissonReconstruction(RotationMixin):
             bar.SetPosition(0.88, 0.1)
             bar.SetWidth(0.1)
             bar.SetHeight(0.8)
-            for prop in (bar.GetTitleTextProperty(), bar.GetLabelTextProperty()):
-                prop.SetColor(0.1, 0.1, 0.1)
-                prop.ShadowOff()
+            bar.VisibilityOff()
             self.renderer.AddActor2D(bar)
             self._scalar_bar = bar
         if mapper is None:
@@ -1159,21 +1221,37 @@ class PoissonReconstruction(RotationMixin):
         else:
             self._scalar_bar.SetLookupTable(mapper.GetLookupTable())
             self._scalar_bar.VisibilityOn()
+        self._style_scalar_bar()
+
+    def _style_scalar_bar(self):
+        color = self.viewport.color("text")
+        for prop in (self._scalar_bar.GetTitleTextProperty(),
+                     self._scalar_bar.GetLabelTextProperty()):
+            prop.SetColor(*color)
+            prop.ShadowOff()
+
+    def refresh_theme(self):
+        """Theme-dependent VTK colours that the viewport does not own."""
+        if self._scalar_bar is not None:
+            self._style_scalar_bar()
+            self.viewport.render()
 
     # =========================
     # Export (STL / OBJ)
     # =========================
     def export_data(self):
         if self.mesh_o3d is None:
-            self.console.appendPlainText("❌ No mesh to export")
+            self.notify("❌ No mesh to export", "warning")
             return
 
         file_path, selected_filter = QFileDialog.getSaveFileName(
-            self.main_window, "Export Mesh", "reconstructed_mesh",
+            self.main_window, "Export Mesh",
+            os.path.join(settings.last_dir(), "reconstructed_mesh"),
             "STL Files (*.stl);;OBJ Files (*.obj)"
         )
         if not file_path:
             return
+        settings.remember_path(file_path)
 
         try:
             # Work on a copy so the displayed mesh is never modified
@@ -1201,12 +1279,11 @@ class PoissonReconstruction(RotationMixin):
                 success = o3d.io.write_triangle_mesh(file_path, mesh)
 
             if success:
-                self.console.appendPlainText(
-                    f"✅ {ext[1:].upper()} exported (rotation applied): {file_path}"
-                )
+                self.notify(
+                    f"✅ {ext[1:].upper()} exported (rotation applied): {file_path}",
+                    "success")
             else:
-                self.console.appendPlainText(
-                    f"❌ Export failed: could not write {file_path}"
-                )
+                self.notify(f"❌ Export failed: could not write {file_path}",
+                            "error", dialog=True)
         except Exception as e:
-            self.console.appendPlainText(f"❌ Export error: {str(e)}")
+            self.notify(f"❌ Export failed: {e}", "error", dialog=True)

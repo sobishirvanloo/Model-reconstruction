@@ -23,10 +23,12 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QFrame,
     QGridLayout,
+    QLabel,
     QPushButton,
     QScrollArea,
 )
 
+from modules import settings
 from modules.geometry_utils import (
     apply_transform,
     estimate_oriented_normals,
@@ -157,17 +159,21 @@ class PointCloudData:
 # =========================
 # Dialog helpers
 # =========================
-def ask_open_point_cloud(parent, title, normals_required):
-    """Ask for a point cloud file.  When it has no normals, ask for a
-    matching legacy normals file (optional unless ``normals_required``).
+def ask_open_point_cloud(parent, title, normals_required, path=None):
+    """Ask for a point cloud file (skipped when ``path`` is given, e.g. a
+    dropped file).  When it has no normals, ask for a matching legacy
+    normals file (optional unless ``normals_required``).
 
     Returns ``PointCloudData`` or ``None`` when cancelled.
     Raises on invalid files.
     """
-    path, _ = QFileDialog.getOpenFileName(parent, title, "", OPEN_FILTER)
     if not path:
-        return None
+        path, _ = QFileDialog.getOpenFileName(
+            parent, title, settings.last_dir(), OPEN_FILTER)
+        if not path:
+            return None
     data = PointCloudData.load(path)
+    settings.add_recent(path)
     if data.has_normals:
         return data
 
@@ -188,10 +194,12 @@ def ask_save_point_cloud(parent, data, default_name):
     Returns the list of written paths (empty when cancelled).
     """
     path, selected = QFileDialog.getSaveFileName(
-        parent, "Save Point Cloud", default_name, SAVE_FILTERS
+        parent, "Save Point Cloud",
+        os.path.join(settings.last_dir(), default_name), SAVE_FILTERS
     )
     if not path:
         return []
+    settings.remember_path(path)
 
     root, ext = os.path.splitext(path)
     if selected == SAVE_FILTER_LEGACY:
@@ -213,9 +221,8 @@ def ask_save_point_cloud(parent, data, default_name):
 
 
 def add_button_after(anchor, text):
-    """Create a button styled like ``anchor`` right below it."""
+    """Create a button right below ``anchor`` (styled by the theme)."""
     button = QPushButton(text, anchor.parentWidget())
-    button.setStyleSheet(anchor.styleSheet())
     insert_widget(anchor, button, after=True)
     return button
 
@@ -228,7 +235,6 @@ def make_scrollable(widget):
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-    scroll.setStyleSheet("QScrollArea { background: transparent; }")
     # Keep the panel's own width limits (plus room for the scrollbar) so
     # the 3D view still gets the remaining space
     bar = scroll.verticalScrollBar().sizeHint().width()
@@ -249,6 +255,21 @@ def make_scrollable(widget):
         scroll.setWidget(widget)
         parent_layout.insertWidget(index, scroll)
     return scroll
+
+
+def add_section(anchor, title):
+    """Section header (themed ``QLabel[role="section"]``) above ``anchor``."""
+    label = QLabel(title.upper(), anchor.parentWidget())
+    label.setProperty("role", "section")
+    return insert_widget(anchor, label, after=False)
+
+
+def move_widget_after(widget, anchor):
+    """Move ``widget`` (already in a layout) to just below ``anchor``."""
+    old = _layout_containing(widget.parentWidget().layout(), widget)
+    if old is not None:
+        old.removeWidget(widget)
+    return insert_widget(anchor, widget, after=True)
 
 
 def insert_widget(anchor, widget, after=True):

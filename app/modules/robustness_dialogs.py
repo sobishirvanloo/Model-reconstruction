@@ -20,18 +20,12 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QStyle,
     QVBoxLayout,
 )
 
 from modules.degradation import AXES, SWEEP_KINDS, Degradation, parse_levels
-from modules.quality_report import ALGORITHM_NAMES, BUTTON_STYLE, DIALOG_STYLE
-
-INPUT_STYLE = """
-QDoubleSpinBox, QSpinBox, QComboBox, QLineEdit {
-    background-color: #ffffff; color: #00171f; border: none;
-    border-radius: 4px; padding: 4px 6px; font-size: 12px;
-    min-height: 20px; }
-"""
+from modules.quality_report import ALGORITHM_NAMES
 
 
 def _double(minimum, maximum, step, decimals, suffix=""):
@@ -43,12 +37,16 @@ def _double(minimum, maximum, step, decimals, suffix=""):
     return box
 
 
-def _buttons(*labels):
+def _buttons(*specs):
+    """Row of buttons from (label, QStyle icon) pairs; the first is the
+    primary action."""
     row = QHBoxLayout()
     buttons = []
-    for label in labels:
+    for index, (label, icon) in enumerate(specs):
         button = QPushButton(label)
-        button.setStyleSheet(BUTTON_STYLE)
+        button.setIcon(button.style().standardIcon(icon))
+        if index == 0:
+            button.setProperty("variant", "primary")
         row.addWidget(button)
         buttons.append(button)
     return row, buttons
@@ -60,7 +58,6 @@ class DegradeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Degrade Data")
-        self.setStyleSheet(DIALOG_STYLE + INPUT_STYLE)
 
         self.noise = _double(0.0, 10.0, 0.05, 2, " %")
         self.normal = _double(0.0, 90.0, 5.0, 1, " °")
@@ -91,7 +88,9 @@ class DegradeDialog(QDialog):
         self.summary = QLabel()
 
         row, (self.btn_apply, self.btn_reset, self.btn_close) = _buttons(
-            "Apply", "Reset to clean", "Close")
+            ("Apply", QStyle.SP_DialogApplyButton),
+            ("Reset to clean", QStyle.SP_DialogResetButton),
+            ("Close", QStyle.SP_DialogCloseButton))
         self.btn_apply.clicked.connect(lambda: self.applied.emit(self.settings()))
         self.btn_reset.clicked.connect(self._reset)
         self.btn_close.clicked.connect(self.close)
@@ -136,7 +135,6 @@ class SweepDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Robustness Sweep")
-        self.setStyleSheet(DIALOG_STYLE + INPUT_STYLE)
         self.resize(560, 320)
 
         self.kind = QComboBox()
@@ -170,7 +168,8 @@ class SweepDialog(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
 
-        row, (self.btn_run, self.btn_cancel) = _buttons("▶ Run sweep", "■ Cancel")
+        row, (self.btn_run, self.btn_cancel) = _buttons(
+            ("Run sweep", QStyle.SP_MediaPlay), ("Cancel", QStyle.SP_MediaStop))
         self.btn_run.clicked.connect(self._run)
         self.btn_cancel.clicked.connect(self.cancel_requested)
         self.kind.currentIndexChanged.connect(self._fill_default_levels)

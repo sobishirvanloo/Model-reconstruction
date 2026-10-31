@@ -1,24 +1,31 @@
 """Tab 2 - Point cloud processing (import, shuffle, voxel density)."""
 
+import os
+
 import numpy as np
 import open3d as o3d
 import vtk
 from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QLabel, QStyle
 
 from modules.degradation import Degradation
 from modules.geometry_utils import normalize, polydata_from_numpy
 from modules.point_data import (
     PointCloudData,
     add_button_after,
+    add_section,
     ask_open_point_cloud,
     ask_save_point_cloud,
+    insert_widget,
     make_scrollable,
 )
 from modules.robustness_dialogs import DegradeDialog
-from modules.vtk_controls import VTKViewport, RotationMixin
+from modules.vtk_controls import TabMixin, VTKViewport
+
+POINT_EXTENSIONS = (".ply", ".pcd", ".txt", ".csv", ".npy")
 
 
-class Processing(RotationMixin):
+class Processing(TabMixin):
     """Import a point cloud (or receive one from the Import tab), reduce
     the density with voxel downsampling, degrade it on purpose (noise,
     holes, ... for robustness tests), shuffle it, then export it or send it
@@ -56,8 +63,13 @@ class Processing(RotationMixin):
         self.degradation = Degradation()
         self.init_rotation_state()
 
-        # Console + VTK render window + axes
-        VTKViewport(self, main_window.frame_console_2, main_window.frame_view_2)
+        # Console + toolbar + VTK render window + axes
+        VTKViewport(
+            self, main_window.frame_console_2, main_window.frame_view_2,
+            empty_hint="Drop a point cloud here (PLY, PCD, TXT, CSV, NPY)\n"
+                       "or press Ctrl+O to open one\n\n"
+                       "(or send one from the Import mesh tab)",
+        )
 
         # ---------- Voxel density (0 = original density) ----------
         self.Point_density_spinbox.setDecimals(3)
@@ -74,23 +86,23 @@ class Processing(RotationMixin):
         self.Point_density_spinbox.valueChanged.connect(self._voxel_timer.start)
 
         # ---------- Connect buttons ----------
-        self.btn_import.clicked.connect(self.import_file)
+        self.btn_import.clicked.connect(lambda: self.import_file())
         self.btn_export.clicked.connect(self.export_data)
-        self.pushButton.clicked.connect(self.apply_rotation)
         self.random_point_btn.clicked.connect(self.randomize_points)
         self.setup_rotation_controls()
 
         self.btn_send_reconstruction = add_button_after(
-            self.btn_export, "➡ Send to Reconstruction"
+            self.btn_export, "Send to Reconstruction"
         )
         self.btn_send_reconstruction.clicked.connect(self.send_data)
 
         self.btn_degrade = add_button_after(
-            self.random_point_btn, "🧪 Degrade data…"
+            self.random_point_btn, "Degrade data…"
         )
         self.degrade_dialog = DegradeDialog(main_window)
         self.degrade_dialog.applied.connect(self.set_degradation)
         self.btn_degrade.clicked.connect(self.show_degrade_dialog)
+        self._build_panel()
 
         # The panel grew: let it scroll on small screens
         make_scrollable(self.btn_export.parentWidget())
@@ -98,13 +110,43 @@ class Processing(RotationMixin):
         # Disable controls until a file is imported
         self._set_controls_enabled(False)
 
-        self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText("Program ready ✅")
-        self.console.appendPlainText("=" * 50)
         self.console.appendPlainText(
-            "📁 Import a point cloud (*.ply, *.pcd, *.txt, *.csv, *.npy) "
-            "or send one from the Import mesh tab"
+            "Ready. Open a point cloud (*.ply, *.pcd, *.txt, *.csv, *.npy) "
+            "or send one from the Import mesh tab."
         )
+
+    def _build_panel(self):
+        """Section headers, icons, tooltips and the file label."""
+        mw = self.main_window
+        self.btn_import.setText("Open point cloud…")
+        self.decorate(self.btn_import, QStyle.SP_DialogOpenButton,
+                      "Open a point cloud: PLY, PCD, TXT, CSV or NPY (Ctrl+O)",
+                      "primary")
+        self.file_label = QLabel("No data loaded")
+        self.file_label.setProperty("role", "hint")
+        self.file_label.setWordWrap(True)
+        insert_widget(self.btn_import, self.file_label, after=True)
+
+        mw.label.setText("Voxel size (0 = original density)")
+        self.Point_density_spinbox.setToolTip(
+            "Merge all points inside each cube of this size into one point "
+            "(their normals are averaged). 0 keeps every point.")
+        self.random_point_btn.setText("Shuffle point order")
+        self.decorate(self.random_point_btn, QStyle.SP_BrowserReload,
+                      "Randomise the order of the points (normals move with them)")
+        self.decorate(self.btn_degrade, QStyle.SP_MessageBoxWarning,
+                      "Add noise, holes or uneven sampling to test how robust "
+                      "the reconstruction is")
+        self.btn_export.setText("Export points…")
+        self.decorate(self.btn_export, QStyle.SP_DialogSaveButton,
+                      "Save points + normals (rotation applied) (Ctrl+S)")
+        self.decorate(self.btn_send_reconstruction, QStyle.SP_ArrowForward,
+                      "Reconstruct a surface from this data", "primary")
+
+        add_section(self.btn_import, "File")
+        add_section(mw.label_x_2, "Rotation")
+        add_section(mw.label, "Density & sampling")
+        add_section(self.btn_export, "Output")
 
     def _set_controls_enabled(self, enabled):
         for widget in self.rotation_widgets() + (
@@ -189,6 +231,17 @@ class Processing(RotationMixin):
             f"✅ Voxel density {label}{extra} → {len(self.points_changed)} points"
         )
         self.render_points(reset_camera=False)
+        self._update_info()
+
+    def _update_info(self):
+        self.set_tab_info(file=self.source_name, points=len(self.points_changed))
+        state = ("" if self.degradation.is_identity
+                 else f"\n{self.degradation.describe()}")
+        self.file_label.setText(
+            f"{self.source_name or 'Received data'}\n"
+            f"{len(self.points_changed):,} points"
+            + ("" if self.normals_changed is not None else " · no normals")
+            + state)
 
     # =========================
     # Render Point Cloud
@@ -206,18 +259,17 @@ class Processing(RotationMixin):
 
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
-        actor.GetProperty().SetColor(0.9, 0.9, 0.9)
         actor.GetProperty().SetPointSize(2)
         actor.GetProperty().SetInterpolationToPhong()
 
-        return self.show_actor(actor, reset_camera=reset_camera)
+        return self.show_actor(actor, reset_camera=reset_camera, kind="points")
 
     # =========================
     # Load data (file or another tab)
     # =========================
     def receive_data(self, data):
         """Called by the main window when another tab sends a cloud."""
-        self.load_data(data, f"Received from Import mesh ✅: {data.source}")
+        self.load_data(data, f"✅ Received from Import mesh: {data.source}")
 
     def load_data(self, data, title):
         self.points = data.points.copy()
@@ -233,14 +285,11 @@ class Processing(RotationMixin):
         self.degrade_dialog.set_settings(self.degradation)
 
         self.console.clear()
-        self.console.appendPlainText("=" * 50)
         self.console.appendPlainText(title)
-        self.console.appendPlainText("=" * 50)
-        self.console.appendPlainText(f"📊 Points: {len(self.points)}")
         self.console.appendPlainText(
-            "📊 Normals: "
-            + (str(len(self.normals)) if self.normals is not None
-               else "none (will be estimated on export / send)")
+            f"   {len(self.points):,} points · normals: "
+            + ("yes" if self.normals is not None
+               else "none (estimated on export / send)")
         )
 
         self._set_controls_enabled(True)
@@ -253,17 +302,25 @@ class Processing(RotationMixin):
 
         self.reset_rotation()
         self.render_points()
+        self.file_label.setProperty("role", "file")
+        self.file_label.style().polish(self.file_label)
+        self._update_info()
 
-    def import_file(self):
+    def import_file(self, path=None):
+        """Open a point cloud (asks with a dialog when ``path`` is None)."""
         try:
             data = ask_open_point_cloud(
-                self.main_window, "Import Point Cloud", normals_required=False
+                self.main_window, "Open Point Cloud", normals_required=False,
+                path=path,
             )
-            if data is None:
-                return
-            self.load_data(data, f"File imported ✅: {data.source}")
         except Exception as e:
-            self.console.appendPlainText(f"❌ Error: {str(e)}")
+            name = os.path.basename(path) if path else "the file"
+            self.notify(f"❌ Could not open {name}: {e}", "error", dialog=True)
+            return
+        if data is None:
+            return
+        self.load_data(data, f"✅ Opened {data.source}")
+        self.notify(f"Opened {data.source}", "success")
 
     # =========================
     # Current data (as displayed)
@@ -296,11 +353,11 @@ class Processing(RotationMixin):
                 f"➡ Sent {len(data)} points + normals to reconstruction"
             )
         except Exception as e:
-            self.console.appendPlainText(f"❌ Send error: {str(e)}")
+            self.notify(f"❌ Send failed: {e}", "error", dialog=True)
 
     def export_data(self):
         if self.points_changed is None:
-            self.console.appendPlainText("❌ No data to export")
+            self.notify("❌ No data to export", "warning")
             return
         try:
             paths = ask_save_point_cloud(
@@ -308,8 +365,9 @@ class Processing(RotationMixin):
             )
             if not paths:
                 return
-            self.console.appendPlainText("File Exported ✅ (rotation applied)")
             for path in paths:
                 self.console.appendPlainText(path)
+            self.notify("✅ Exported (rotation applied): "
+                        + ", ".join(os.path.basename(p) for p in paths), "success")
         except Exception as e:
-            self.console.appendPlainText(f"❌ Export error: {str(e)}")
+            self.notify(f"❌ Export failed: {e}", "error", dialog=True)

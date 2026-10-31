@@ -20,35 +20,29 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QPushButton,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
+import os
+
+from modules import settings
 from modules.quality_metrics import metric_rows, rows_to_markdown
 
 
-DIALOG_STYLE = """
-QDialog { background-color: #003459; }
-QLabel, QCheckBox, QGroupBox { color: #ffffff; font-size: 12px;
-                               background: transparent; }
-QGroupBox { font-weight: bold; border: 1px solid #007ea7;
-            border-radius: 6px; margin-top: 10px; padding-top: 8px; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
-QTableWidget { background-color: #ffffff; color: #00171f;
-               alternate-background-color: #eef5f9;
-               gridline-color: #c8d8e2; font-size: 12px; }
-QHeaderView::section { background-color: #007ea7; color: #ffffff;
-                       font-weight: bold; padding: 4px; border: none; }
-"""
+def make_button(text, icon=None, tooltip="", variant=None):
+    """Push button with a standard icon and an optional theme variant."""
+    button = QPushButton(text)
+    if icon is not None:
+        button.setIcon(button.style().standardIcon(icon))
+    if tooltip:
+        button.setToolTip(tooltip)
+    if variant:
+        button.setProperty("variant", variant)
+    return button
 
-BUTTON_STYLE = """
-QPushButton { background-color: #007ea7; color: #ffffff; border: none;
-              border-radius: 6px; padding: 6px 12px; font-weight: bold; }
-QPushButton:hover { background-color: #00a8e8; }
-QPushButton:pressed { background-color: #00263a; }
-QPushButton:disabled { background-color: #7f9aab; }
-"""
 
 ALGORITHM_NAMES = {
     "poisson": "Poisson",
@@ -137,7 +131,6 @@ class QualityReportDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Quality Report")
-        self.setStyleSheet(DIALOG_STYLE)
         self.resize(820, 700)
         self._latest_markdown = ""
         self._history = []
@@ -146,10 +139,12 @@ class QualityReportDialog(QDialog):
         ref_box = QGroupBox("Reference (ground truth)")
         self.reference_label = QLabel("Input points")
         self.reference_label.setWordWrap(True)
-        self.btn_load_reference = QPushButton("📐 Load reference mesh…")
-        self.btn_use_points = QPushButton("Use input points")
-        for button in (self.btn_load_reference, self.btn_use_points):
-            button.setStyleSheet(BUTTON_STYLE)
+        self.btn_load_reference = make_button(
+            "Load reference mesh…", QStyle.SP_DialogOpenButton,
+            "Compare against a mesh in the same coordinates as the data")
+        self.btn_use_points = make_button(
+            "Use input points", QStyle.SP_DialogResetButton,
+            "Compare against the input points instead of a mesh")
         ref_buttons = QHBoxLayout()
         ref_buttons.addWidget(self.btn_load_reference)
         ref_buttons.addWidget(self.btn_use_points)
@@ -161,8 +156,10 @@ class QualityReportDialog(QDialog):
         self.check_evaluate = QCheckBox("Evaluate after every reconstruction")
         self.check_evaluate.setChecked(True)
         self.check_heatmap = QCheckBox("Color mesh by error (heatmap)")
-        self.btn_sweep = QPushButton("🧪 Robustness sweep…")
-        self.btn_sweep.setStyleSheet(BUTTON_STYLE)
+        self.btn_sweep = make_button(
+            "Robustness sweep…", QStyle.SP_MediaPlay,
+            "Run every algorithm on several levels of noise, holes, …",
+            "primary")
         options_row = QHBoxLayout()
         options_row.addWidget(self.check_heatmap)
         options_row.addStretch()
@@ -190,12 +187,16 @@ class QualityReportDialog(QDialog):
             QHeaderView.ResizeToContents)
 
         # ---------- Export ----------
-        self.btn_copy = QPushButton("📋 Copy table as Markdown")
-        self.btn_save_csv = QPushButton("💾 Save history CSV…")
-        self.btn_clear = QPushButton("🗑 Clear history")
+        self.btn_copy = make_button(
+            "Copy table as Markdown", QStyle.SP_FileDialogContentsView,
+            "Copy the table above, ready to paste into a report")
+        self.btn_save_csv = make_button(
+            "Save history CSV…", QStyle.SP_DialogSaveButton,
+            "Every parameter and metric of every run")
+        self.btn_clear = make_button(
+            "Clear history", QStyle.SP_DialogDiscardButton)
         export_row = QHBoxLayout()
         for button in (self.btn_copy, self.btn_save_csv, self.btn_clear):
-            button.setStyleSheet(BUTTON_STYLE)
             export_row.addWidget(button)
 
         layout = QVBoxLayout(self)
@@ -294,9 +295,11 @@ class QualityReportDialog(QDialog):
 
     def save_csv(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Run History", "quality_history.csv", "CSV (*.csv)")
+            self, "Save Run History",
+            os.path.join(settings.last_dir(), "quality_history.csv"), "CSV (*.csv)")
         if not path:
             return
+        settings.remember_path(path)
         if not path.lower().endswith(".csv"):
             path += ".csv"
         rows = [flatten_record(record) for record in self._history]

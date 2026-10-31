@@ -11,6 +11,36 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 | **Point Cloud Processing** | Import a point cloud or receive one from *Import mesh*, shuffle the points, reduce density with **voxel downsampling** (`0` = original), then **send it to Reconstruction** or export it (normals are estimated if none were imported). |
 | **Reconstruction** | Import a point cloud with normals or receive one from another tab, reconstruct a surface with **Poisson**, **Ball Pivoting** or **Alpha Shape** (Open3D), measure its quality and export the result as STL / OBJ. |
 
+### User interface
+
+* **Light theme by default, dark theme** with *View ▸ Dark Theme* (Ctrl+T);
+  the choice is remembered. All colours live in `app/modules/theme.py`
+  (no hard-coded style sheets in `main.ui`), so dialogs — including the file
+  dialog — always match.
+* **Drag & drop** a file onto the window, or use *File ▸ Open Recent*; file
+  dialogs start in the last folder used. Meshes open in *Import mesh*,
+  tables in *Process points*, PLY / PCD in the current tab.
+* **Empty views explain what to do**; *File ▸ Open Sample* (Ctrl+Shift+O)
+  loads the Stanford bunny.
+* **Status bar**: current file, point / triangle counts, a progress bar while
+  reconstructing or sweeping, and coloured success / error messages
+  (serious errors also open a dialog).
+* **Camera toolbar** above every view: Reset, Front, Top, Side, Iso and
+  Screenshot (PNG, rendered off-screen).
+* Side panels are split into sections with tooltips on every parameter;
+  rotation sliders act **live** (*Reset rotation* sets them back to 0°).
+* Tabs read as steps (1 Import → 2 Process → 3 Reconstruct) and get a
+  check mark once they hold data.
+
+| Shortcut | Action |
+|---|---|
+| Ctrl+O / Ctrl+Shift+O | Open file / open the sample bunny |
+| Ctrl+S / Ctrl+Shift+S | Export / save a screenshot |
+| Ctrl+0, Ctrl+1…4 | Reset view, Front / Top / Side / Iso |
+| Ctrl+R | Quality report |
+| Ctrl+T | Light / dark theme |
+| F1 | All shortcuts |
+
 ### Reconstruction algorithms
 
 | Algorithm | Idea | Parameter | Good at | Weak at |

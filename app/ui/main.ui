@@ -13,16 +13,10 @@
   <property name="windowTitle">
    <string>Model Reconstruction</string>
   </property>
-  <property name="styleSheet">
-   <string notr="true">background-color:#00171f;</string>
-  </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout_8">
     <item row="0" column="0">
      <widget class="QFrame" name="frame">
-      <property name="styleSheet">
-       <string notr="true">background-color:#00171f;</string>
-      </property>
       <property name="frameShape">
        <enum>QFrame::StyledPanel</enum>
       </property>
@@ -37,34 +31,6 @@
            <width>0</width>
            <height>0</height>
           </size>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">
-QTabWidget::pane {
-    border: 1px solid #003459;
-    background: #00171f;
-}
-QTabBar::tab {
-    background: #003459;
-    color: white;
-    padding: 8px 20px;
-    margin: 2px;
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-    font-size: 13px;
-}
-QTabBar::tab:selected {
-    background: #00a8e8;
-    color: #00171f;
-    font-weight: bold;
-}
-QTabBar::tab:hover {
-    background: #004b75;
-}
-QTabBar::tab:!selected {
-    margin-top: 4px;
-}
-</string>
          </property>
          <property name="currentIndex">
           <number>0</number>
@@ -94,10 +60,6 @@ QTabBar::tab:!selected {
                <height>16777215</height>
               </size>
              </property>
-             <property name="styleSheet">
-              <string notr="true">background-color: #007ea7;
-border-radius: 6px;</string>
-             </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
              </property>
@@ -107,23 +69,6 @@ border-radius: 6px;</string>
              <layout class="QVBoxLayout" name="verticalLayout_2">
               <item>
                <widget class="QPushButton" name="btn_import">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>📁 Browse File</string>
                 </property>
@@ -144,9 +89,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QLabel" name="label_x">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>X-Axis (angle)</string>
                 </property>
@@ -154,16 +96,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_X">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -177,19 +109,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QSlider" name="slider_X">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -203,9 +122,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_y">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Y-Axis (angle)</string>
                 </property>
@@ -213,16 +129,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_Y">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -236,19 +142,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSlider" name="slider_Y">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -262,9 +155,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_z">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Z-Axis (angle)</string>
                 </property>
@@ -272,16 +162,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_Z">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -295,19 +175,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSlider" name="slider_Z">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -334,23 +201,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QPushButton" name="pushButton">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>✓ Apply Changes</string>
                 </property>
@@ -371,23 +221,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QPushButton" name="btn_export">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>💾 Export Data</string>
                 </property>
@@ -410,20 +243,6 @@ QPushButton:pressed {
                <height>100</height>
               </size>
              </property>
-             <property name="styleSheet">
-              <string notr="true">QFrame {
-    background-color: #007ea7;
-    border: 2px solid #003459;
-    border-radius: 6px;
-}
-QTextEdit, QPlainTextEdit {
-    background-color: #007ea7;
-    color: white;
-    font-family: &quot;Courier New&quot;, monospace;
-    font-size: 16px;
-    border: none;
-}</string>
-             </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
              </property>
@@ -439,10 +258,6 @@ QTextEdit, QPlainTextEdit {
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">border: 1px solid #ffffff;
-background-color:#005a87;</string>
              </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
@@ -468,10 +283,6 @@ background-color:#005a87;</string>
                  <horstretch>0</horstretch>
                  <verstretch>0</verstretch>
                 </sizepolicy>
-               </property>
-               <property name="styleSheet">
-                <string notr="true">border: 1px solid #ffffff;
-background-color:#005a87;</string>
                </property>
                <property name="frameShape">
                 <enum>QFrame::StyledPanel</enum>
@@ -501,10 +312,6 @@ background-color:#005a87;</string>
                  <height>16777215</height>
                 </size>
                </property>
-               <property name="styleSheet">
-                <string notr="true">background-color: #007ea7;
-border-radius: 6px;</string>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::StyledPanel</enum>
                </property>
@@ -514,23 +321,6 @@ border-radius: 6px;</string>
                <layout class="QVBoxLayout" name="verticalLayout_13">
                 <item>
                  <widget class="QPushButton" name="btn_import_2">
-                  <property name="styleSheet">
-                   <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                  </property>
                   <property name="text">
                    <string>📁 Browse File</string>
                   </property>
@@ -551,9 +341,6 @@ QPushButton:pressed {
                 </item>
                 <item>
                  <widget class="QLabel" name="label_x_2">
-                  <property name="styleSheet">
-                   <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                  </property>
                   <property name="text">
                    <string>X-Axis (angle)</string>
                   </property>
@@ -561,16 +348,6 @@ QPushButton:pressed {
                 </item>
                 <item>
                  <widget class="QSpinBox" name="spinBox_X_2">
-                  <property name="styleSheet">
-                   <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -584,19 +361,6 @@ QPushButton:pressed {
                 </item>
                 <item>
                  <widget class="QSlider" name="slider_X_2">
-                  <property name="styleSheet">
-                   <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -610,9 +374,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QLabel" name="label_y_12">
-                  <property name="styleSheet">
-                   <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                  </property>
                   <property name="text">
                    <string>Y-Axis (angle)</string>
                   </property>
@@ -620,16 +381,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QSpinBox" name="spinBox_Y_2">
-                  <property name="styleSheet">
-                   <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -643,19 +394,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QSlider" name="slider_Y_2">
-                  <property name="styleSheet">
-                   <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -669,9 +407,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QLabel" name="label_z_12">
-                  <property name="styleSheet">
-                   <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                  </property>
                   <property name="text">
                    <string>Z-Axis (angle)</string>
                   </property>
@@ -679,16 +414,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QSpinBox" name="spinBox_Z_2">
-                  <property name="styleSheet">
-                   <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -702,19 +427,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QSlider" name="slider_Z_2">
-                  <property name="styleSheet">
-                   <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                  </property>
                   <property name="minimum">
                    <number>-360</number>
                   </property>
@@ -728,9 +440,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QLabel" name="label">
-                  <property name="styleSheet">
-                   <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                  </property>
                   <property name="text">
                    <string>Voxel downsampling</string>
                   </property>
@@ -738,15 +447,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QDoubleSpinBox" name="Point_density_spinbox">
-                  <property name="styleSheet">
-                   <string notr="true">
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;</string>
-                  </property>
                  </widget>
                 </item>
                 <item>
@@ -764,23 +464,6 @@ QSlider::handle:horizontal {
                 </item>
                 <item>
                  <widget class="QPushButton" name="random_point_btn">
-                  <property name="styleSheet">
-                   <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                  </property>
                   <property name="text">
                    <string>Shuffle points</string>
                   </property>
@@ -788,23 +471,6 @@ QPushButton:pressed {
                 </item>
                 <item>
                  <widget class="QPushButton" name="pushButton_2">
-                  <property name="styleSheet">
-                   <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                  </property>
                   <property name="text">
                    <string>✓ Apply Changes</string>
                   </property>
@@ -825,23 +491,6 @@ QPushButton:pressed {
                 </item>
                 <item>
                  <widget class="QPushButton" name="btn_export_2">
-                  <property name="styleSheet">
-                   <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                  </property>
                   <property name="text">
                    <string>💾 Export Data</string>
                   </property>
@@ -864,20 +513,6 @@ QPushButton:pressed {
                  <height>100</height>
                 </size>
                </property>
-               <property name="styleSheet">
-                <string notr="true">QFrame {
-    background-color: #007ea7;
-    border: 2px solid #003459;
-    border-radius: 6px;
-}
-QTextEdit, QPlainTextEdit {
-    background-color: #007ea7;
-    color: white;
-    font-family: &quot;Courier New&quot;, monospace;
-    font-size: 16px;
-    border: none;
-}</string>
-               </property>
                <property name="frameShape">
                 <enum>QFrame::StyledPanel</enum>
                </property>
@@ -891,9 +526,6 @@ QTextEdit, QPlainTextEdit {
           </layout>
          </widget>
          <widget class="QWidget" name="tab_5">
-          <property name="styleSheet">
-           <string notr="true"/>
-          </property>
           <attribute name="title">
            <string>  Reconstruction   </string>
           </attribute>
@@ -905,10 +537,6 @@ QTextEdit, QPlainTextEdit {
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">border: 1px solid #ffffff;
-background-color:#005a87;</string>
              </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
@@ -938,10 +566,6 @@ background-color:#005a87;</string>
                <height>16777215</height>
               </size>
              </property>
-             <property name="styleSheet">
-              <string notr="true">background-color: #007ea7;
-border-radius: 6px;</string>
-             </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
              </property>
@@ -951,23 +575,6 @@ border-radius: 6px;</string>
              <layout class="QVBoxLayout" name="verticalLayout_16">
               <item>
                <widget class="QPushButton" name="btn_import_pointsandnormals">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>📁 Import Points and Normals</string>
                 </property>
@@ -988,9 +595,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QLabel" name="label_x_6">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>X-Axis (angle)</string>
                 </property>
@@ -998,16 +602,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_X_6">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1021,19 +615,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QSlider" name="slider_X_6">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1047,9 +628,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_y_15">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Y-Axis (angle)</string>
                 </property>
@@ -1057,16 +635,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_Y_6">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1080,19 +648,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSlider" name="slider_Y_6">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1106,9 +661,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_z_15">
-                <property name="styleSheet">
-                 <string>color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Z-Axis (angle)</string>
                 </property>
@@ -1116,16 +668,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_Z_6">
-                <property name="styleSheet">
-                 <string>QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1139,19 +681,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSlider" name="slider_Z_6">
-                <property name="styleSheet">
-                 <string>QSlider::groove:horizontal {
-    background: #003459;
-    height: 8px;
-    border-radius: 4px;
-}
-QSlider::handle:horizontal {
-    background: #00a8e8;
-    width: 18px;
-    margin: -5px 0;
-    border-radius: 9px;
-}</string>
-                </property>
                 <property name="minimum">
                  <number>-360</number>
                 </property>
@@ -1178,9 +707,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="Depth">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Depth</string>
                 </property>
@@ -1188,23 +714,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox">
-                <property name="styleSheet">
-                 <string notr="true">QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QLabel" name="width">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Width</string>
                 </property>
@@ -1212,23 +725,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QDoubleSpinBox" name="doubleSpinBox">
-                <property name="styleSheet">
-                 <string notr="true">
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QLabel" name="Scale">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Scale</string>
                 </property>
@@ -1236,23 +736,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QDoubleSpinBox" name="doubleSpinBox_2">
-                <property name="styleSheet">
-                 <string notr="true">
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QCheckBox" name="Linear_fit">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Linear_fit</string>
                 </property>
@@ -1260,9 +747,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_preproc">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Preprocess</string>
                 </property>
@@ -1270,9 +754,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QCheckBox" name="checkBox_preprocess">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Denoise + orient normals</string>
                 </property>
@@ -1280,9 +761,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_voxel">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Voxel size (0 = off)</string>
                 </property>
@@ -1290,23 +768,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QDoubleSpinBox" name="doubleSpinBox_voxel">
-                <property name="styleSheet">
-                 <string notr="true">
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QLabel" name="label_density">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Density filter (%)</string>
                 </property>
@@ -1314,23 +779,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QDoubleSpinBox" name="doubleSpinBox_density">
-                <property name="styleSheet">
-                 <string notr="true">
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QCheckBox" name="checkBox_crop">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Crop to bounds</string>
                 </property>
@@ -1338,9 +790,6 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QLabel" name="label_smooth">
-                <property name="styleSheet">
-                 <string notr="true">color: #ffffff; font-weight: bold; font-size: 12px;</string>
-                </property>
                 <property name="text">
                  <string>Smoothing (iters)</string>
                 </property>
@@ -1348,37 +797,10 @@ QSlider::handle:horizontal {
               </item>
               <item>
                <widget class="QSpinBox" name="spinBox_smooth">
-                <property name="styleSheet">
-                 <string notr="true">QSpinBox {
-    background-color: #ffffff;
-    color: #000000;
-    border: 1px solid #003459;
-    border-radius: 4px;
-    padding: 4px;
-    font-weight: bold;
-}</string>
-                </property>
                </widget>
               </item>
               <item>
                <widget class="QPushButton" name="pushButton_6">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>✓ Apply Changes</string>
                 </property>
@@ -1399,23 +821,6 @@ QPushButton:pressed {
               </item>
               <item>
                <widget class="QPushButton" name="btn_export_6">
-                <property name="styleSheet">
-                 <string notr="true">QPushButton {
-    background-color: #003459;
-    color: #ffffff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: bold;
-}
-QPushButton:hover {
-    background-color: #00a8e8;
-}
-QPushButton:pressed {
-    background-color: #00263a;
-}</string>
-                </property>
                 <property name="text">
                  <string>💾 Export Data</string>
                 </property>
@@ -1437,20 +842,6 @@ QPushButton:pressed {
                <width>16777215</width>
                <height>100</height>
               </size>
-             </property>
-             <property name="styleSheet">
-              <string notr="true">QFrame {
-    background-color: #007ea7;
-    border: 2px solid #003459;
-    border-radius: 6px;
-}
-QTextEdit, QPlainTextEdit {
-    background-color: #007ea7;
-    color: white;
-    font-family: &quot;Courier New&quot;, monospace;
-    font-size: 16px;
-    border: none;
-}</string>
              </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
@@ -1478,13 +869,7 @@ QTextEdit, QPlainTextEdit {
      <height>26</height>
     </rect>
    </property>
-   <property name="styleSheet">
-    <string notr="true">color:white;</string>
-   </property>
    <widget class="QMenu" name="menuFile">
-    <property name="styleSheet">
-     <string notr="true">color:white;</string>
-    </property>
     <property name="title">
      <string>File</string>
     </property>
