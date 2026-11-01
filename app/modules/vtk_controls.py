@@ -355,6 +355,10 @@ class RotationMixin:
         self.interactor.AddObserver(
             "EndInteractionEvent", self.update_spinbox_from_actor
         )
+        # ... and turn the axes with the model while dragging
+        self.interactor.GetInteractorStyle().AddObserver(
+            "InteractionEvent", lambda *_: self._sync_axes()
+        )
 
     def rotation_widgets(self):
         return (
@@ -390,12 +394,28 @@ class RotationMixin:
             f"Y: {self.rotation_y:.1f}° | Z: {self.rotation_z:.1f}°"
         )
 
+    def _sync_axes(self):
+        """Give the corner axes the model's rotation, so they show the
+        model's own X/Y/Z (the camera views still turn them too)."""
+        orientation = (
+            self.actor.GetOrientation() if self.actor is not None
+            else (0.0, 0.0, 0.0)
+        )
+        # vtkAxesActor draws its parts with its *user transform* only
+        # (SetOrientation is ignored), so pass the rotation that way.
+        pose = vtk.vtkActor()
+        pose.SetOrientation(*orientation)
+        transform = vtk.vtkTransform()
+        transform.SetMatrix(pose.GetMatrix())
+        self.marker.GetOrientationMarker().SetUserTransform(transform)
+
     def _apply_orientation(self):
         if self.actor is None:
             return False
         self.actor.SetOrientation(
             self.rotation_x, self.rotation_y, self.rotation_z
         )
+        self._sync_axes()
         self.vtk_widget.GetRenderWindow().Render()
         return True
 
@@ -421,6 +441,7 @@ class RotationMixin:
 
         self.actor = actor
         self.renderer.AddActor(actor)
+        self._sync_axes()
         self.viewport.set_empty(False)
         if reset_camera:
             self.renderer.ResetCamera()
@@ -540,6 +561,7 @@ class TabMixin(RotationMixin):
         self.actor = None
         self.actor_kind = None
         self.reset_rotation()
+        self._sync_axes()
         for widget in self.rotation_widgets():
             widget.setEnabled(False)
         self.file_label.setText("No data loaded")
