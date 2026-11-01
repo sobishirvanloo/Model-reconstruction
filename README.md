@@ -25,9 +25,19 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 * **Status bar**: current file, point / triangle counts, a progress bar while
   reconstructing or sweeping, and coloured success / error messages
   (serious errors also open a dialog).
-* **Toolbar** above every view: Reset view, **View ▾** (Front / Top /
-  Side / Iso), **Object ▾**, **Background ▾** and Screenshot (PNG,
-  rendered off-screen, guides included).
+* **Toolbar** above every view: **Reset view** (rotation and position
+  back to 0 and the model framed), **◀ 3 / 10 ▶** checkpoints, **View ▾**
+  (Front / Top / Side / Iso), **Object ▾**, **Background ▾** and
+  Screenshot (PNG, rendered off-screen, guides included).
+* **Checkpoints** — each tab keeps its last **10** states: opening /
+  receiving data, voxel size or degradation, shuffling, each finished
+  reconstruction and every rotation / move (once it settles). ◀ / ▶
+  (Alt+Left / Alt+Right) step through them, the badges on the arrows show
+  the checkpoint they lead to, and the counter lists them all to jump to
+  one. A checkpoint holds the whole state — data, mesh, parameters,
+  quality results, rotation and position — and restoring it recomputes
+  nothing. Going back and changing something drops the later checkpoints
+  (like undo); *Remove data* clears them so the memory is freed.
 * **Object ▾ → Colour & display…** — *original colours* (the file's vertex
   colours, which follow the points through processing and onto the
   reconstructed mesh; the theme colour when the file has none) or a custom
@@ -62,7 +72,8 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 | Ctrl+O / Ctrl+Shift+O | Open file / open the sample bunny |
 | Ctrl+S / Ctrl+Shift+S | Export / save a screenshot |
 | Ctrl+W / Ctrl+Shift+W | Remove the data of this tab / of all tabs |
-| Ctrl+0, Ctrl+1…4 | Reset view, Front / Top / Side / Iso |
+| Ctrl+0, Ctrl+1…4 | Reset view (rotation, position, zoom), Front / Top / Side / Iso |
+| Alt+Left / Alt+Right | Previous / next checkpoint |
 | Ctrl+R | Quality report |
 | Ctrl+T | Light / dark theme |
 | F1 | All shortcuts |

@@ -266,21 +266,44 @@ class Geometry(TabMixin):
             + (f" · {len(self.triangles):,} triangles"
                if self.triangles is not None else "")
         )
+        self.reset_transform()
+        self._show_data()
+        self.record_checkpoint(f"Opened {self.source_name}")
+        self.notify(f"Opened {self.source_name}", "success")
+
+    def _show_data(self):
+        """Panel, view and status bar for the current data."""
+        kind = "Point cloud" if self.triangles is None else "Mesh"
         self.file_label.setText(
             f"{self.source_name}\n{kind} · {len(self.points):,} points")
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)
-
         for widget in self.rotation_widgets() + self._data_buttons():
             widget.setEnabled(True)
         self.btn_remove.setEnabled(True)
-
-        self.reset_transform()
         self.render_geometry()
         self.set_tab_info(
             file=self.source_name, points=len(self.points),
             triangles=None if self.triangles is None else len(self.triangles))
-        self.notify(f"Opened {self.source_name}", "success")
+
+    # =========================
+    # Checkpoints
+    # =========================
+    def snapshot(self):
+        return {
+            "points": self.points, "normals": self.normals,
+            "triangles": self.triangles, "colors": self.colors,
+            "source": self.source_name, **self.pose_state(),
+        }
+
+    def restore(self, state):
+        changed = state["points"] is not self.points
+        self.points, self.normals = state["points"], state["normals"]
+        self.triangles, self.colors = state["triangles"], state["colors"]
+        self.source_name = state["source"]
+        self.restore_pose(state)
+        if changed:
+            self._show_data()              # the new actor takes this pose
 
     # =========================
     # Remove data

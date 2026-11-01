@@ -34,7 +34,8 @@ SHORTCUTS = (
     ("Ctrl+Shift+S", "Save a screenshot of the 3D view"),
     ("Ctrl+W", "Remove the current tab's data (frees memory)"),
     ("Ctrl+Shift+W", "Remove the data from all tabs"),
-    ("Ctrl+0", "Reset the view"),
+    ("Ctrl+0", "Rotation and position back to 0, fit the view"),
+    ("Alt+Left / Alt+Right", "Previous / next checkpoint (10 per tab)"),
     ("Ctrl+1 … Ctrl+4", "Front / Top / Side / Iso view"),
     ("Ctrl+R", "Quality report"),
     ("Ctrl+T", "Switch light / dark theme"),
@@ -286,8 +287,8 @@ class MainWindow(QMainWindow):
         self._action(file_menu, "&Quit", self.close, "Ctrl+Q")
 
         view_menu = bar.addMenu("&View")
-        self._action(view_menu, "&Reset View",
-                     lambda: self.current_tab().viewport.reset_camera(),
+        self._action(view_menu, "&Reset View (rotation, position, zoom)",
+                     lambda: self.current_tab().viewport.reset_pose(),
                      "Ctrl+0", QStyle.SP_BrowserReload)
         for number, (name, (direction, up)) in enumerate(CAMERA_VIEWS.items(), 1):
             self._action(
@@ -295,6 +296,13 @@ class MainWindow(QMainWindow):
                 lambda _=False, d=direction, u=up:
                     self.current_tab().viewport.set_view(d, u),
                 f"Ctrl+{number}")
+        view_menu.addSeparator()
+        self._action(view_menu, "Previous Checkpoint",
+                     lambda: self.current_tab().checkpoint_back(), "Alt+Left",
+                     QStyle.SP_ArrowBack)
+        self._action(view_menu, "Next Checkpoint",
+                     lambda: self.current_tab().checkpoint_forward(), "Alt+Right",
+                     QStyle.SP_ArrowForward)
         view_menu.addSeparator()
         self.action_mouse_guide = self._action(
             view_menu, "&Mouse Guide", self.show_mouse_guide,

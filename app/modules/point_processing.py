@@ -167,6 +167,38 @@ class Processing(TabMixin):
         self.degrade_dialog.show()
         self.degrade_dialog.raise_()
 
+    # =========================
+    # Checkpoints
+    # =========================
+    def snapshot(self):
+        return {
+            "points": self.points, "normals": self.normals,
+            "colors": self.colors,
+            "points_changed": self.points_changed,
+            "normals_changed": self.normals_changed,
+            "shuffled": self.shuffled, "source": self.source_name,
+            "reference": self.reference, "degradation": self.degradation,
+            "voxel": self.Point_density_spinbox.value(), **self.pose_state(),
+        }
+
+    def restore(self, state):
+        self._voxel_timer.stop()
+        for key in ("points", "normals", "colors", "points_changed",
+                    "normals_changed", "shuffled", "reference", "degradation"):
+            setattr(self, key, state[key])
+        self.source_name = state["source"]
+        self.degrade_dialog.set_settings(self.degradation)
+        self.Point_density_spinbox.blockSignals(True)
+        self.Point_density_spinbox.setValue(state["voxel"])
+        self.Point_density_spinbox.blockSignals(False)
+        self._set_controls_enabled(True)
+        self.btn_remove.setEnabled(True)
+        self.file_label.setProperty("role", "file")
+        self.file_label.style().polish(self.file_label)
+        self.restore_pose(state)
+        self.render_points(reset_camera=False)
+        self._update_info()
+
     def set_degradation(self, degradation):
         self.degradation = degradation
         self.degrade_dialog.set_settings(degradation)
@@ -184,6 +216,7 @@ class Processing(TabMixin):
         self.shuffled = True
         self.console.appendPlainText(f"🔀 Points shuffled ✅ ({len(self.points_changed)})")
         self.render_points(reset_camera=False)
+        self.record_checkpoint("Shuffled")
 
     def _shuffle(self):
         perm = np.random.permutation(len(self.points_changed))
@@ -235,6 +268,9 @@ class Processing(TabMixin):
         )
         self.render_points(reset_camera=False)
         self._update_info()
+        self.record_checkpoint(
+            f"Voxel {label}" + ("" if self.degradation.is_identity
+                                else f" · {self.degradation.describe()}"))
 
     def _update_info(self):
         self.set_tab_info(file=self.source_name, points=len(self.points_changed))
@@ -314,6 +350,7 @@ class Processing(TabMixin):
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)
         self._update_info()
+        self.record_checkpoint(f"Loaded {self.source_name or 'data'}")
 
     def import_file(self, path=None):
         """Open a point cloud (asks with a dialog when ``path`` is None)."""

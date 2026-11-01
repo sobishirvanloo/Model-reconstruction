@@ -14,6 +14,7 @@ module (import_mesh / point_processing / poisson_reconstruction):
 """
 
 import ctypes
+import dataclasses
 import gc
 import sys
 
@@ -21,8 +22,16 @@ import math
 
 import numpy as np
 import vtk
-from PyQt5.QtCore import QRectF, Qt
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+from PyQt5.QtCore import QRectF, Qt, QTimer
+from PyQt5.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
@@ -315,6 +324,8 @@ class VTKViewport:
         self.hint.SetPosition(0.5, 0.5)
         owner.renderer.AddViewProp(self.hint)
 
+        if hasattr(owner, "init_checkpoints"):
+            owner.init_checkpoints()
         self.object_settings = view_settings.load(OBJECT)
         self.background_settings = view_settings.load(BACKGROUND)
         self.overlays = SceneOverlays(owner.renderer)
@@ -329,8 +340,24 @@ class VTKViewport:
         style = parent.style()
         reset = toolbar.addAction(
             style.standardIcon(QStyle.SP_BrowserReload), "Reset view")
-        reset.setToolTip("Fit the model in the view (Ctrl+0)")
-        reset.triggered.connect(self.reset_camera)
+        reset.setToolTip("Rotation and position back to 0 and fit the "
+                         "model in the view (Ctrl+0)")
+        reset.triggered.connect(self.reset_pose)
+        toolbar.addSeparator()
+
+        # Checkpoints: back / "3 / 10" (list) / forward
+        self.btn_back = QToolButton(toolbar)
+        self.btn_back.clicked.connect(lambda: self.owner.checkpoint_back())
+        self.checkpoint_button = QToolButton(toolbar)
+        self.checkpoint_button.setPopupMode(QToolButton.InstantPopup)
+        self.checkpoint_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.checkpoint_menu = QMenu(self.checkpoint_button)
+        self.checkpoint_menu.aboutToShow.connect(self._fill_checkpoint_menu)
+        self.checkpoint_button.setMenu(self.checkpoint_menu)
+        self.btn_forward = QToolButton(toolbar)
+        self.btn_forward.clicked.connect(lambda: self.owner.checkpoint_forward())
+        for widget in (self.btn_back, self.checkpoint_button, self.btn_forward):
+            toolbar.addWidget(widget)
         toolbar.addSeparator()
 
         view_menu = self._dropdown(toolbar, "View", "Look at the model from "
@@ -394,6 +421,81 @@ class VTKViewport:
     def reset_camera(self):
         self.fit_camera()
         self.render()
+
+    def reset_pose(self):
+        """Toolbar *Reset view*: the 6 rotation / position values back to
+        0, then frame the model."""
+        reset = getattr(self.owner, "reset_pose_view", None)
+        if reset:
+            reset()
+        self.reset_camera()
+
+    # =========================
+    # Checkpoint buttons
+    # =========================
+    def _badge_icon(self, icon, number):
+        """``icon`` with the checkpoint ``number`` in a small badge."""
+        size = 24
+        pixmap = QPixmap(size * 2, size * 2)
+        pixmap.fill(Qt.transparent)
+        pixmap.setDevicePixelRatio(2)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        icon.paint(painter, 0, 0, 18, 18)
+        if number:
+            palette = PALETTES[self.theme]
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(palette["primary"]))
+            painter.drawEllipse(QRectF(10, 10, 14, 14))
+            font = QFont()
+            font.setPixelSize(10 if number < 10 else 8)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor(palette["on_primary"]))
+            painter.drawText(QRectF(10, 10, 14, 14), Qt.AlignCenter, str(number))
+        painter.end()
+        return QIcon(pixmap)
+
+    def update_checkpoints(self):
+        """Counter and arrow badges from the owner's checkpoint list."""
+        owner = self.owner
+        count = len(getattr(owner, "checkpoints", ()))
+        index = getattr(owner, "checkpoint_index", -1)
+        style = self.btn_back.style()
+        has_back = index > 0
+        has_forward = 0 <= index < count - 1
+        self.btn_back.setIcon(self._badge_icon(
+            style.standardIcon(QStyle.SP_ArrowBack), index if has_back else 0))
+        self.btn_forward.setIcon(self._badge_icon(
+            style.standardIcon(QStyle.SP_ArrowForward),
+            index + 2 if has_forward else 0))
+        self.btn_back.setEnabled(has_back)
+        self.btn_forward.setEnabled(has_forward)
+        labels = [label for label, *_ in getattr(owner, "checkpoints", ())]
+        self.btn_back.setToolTip(
+            f"Back to checkpoint {index}: {labels[index - 1]} (Alt+Left)"
+            if has_back else "No earlier checkpoint")
+        self.btn_forward.setToolTip(
+            f"Forward to checkpoint {index + 2}: {labels[index + 1]} (Alt+Right)"
+            if has_forward else "No later checkpoint")
+        self.checkpoint_button.setText(
+            f"{index + 1} / {count}" if count else "0 / 0")
+        self.checkpoint_button.setEnabled(count > 0)
+        self.checkpoint_button.setToolTip(
+            f"Checkpoint {index + 1} of {count} (up to "
+            f"{MAX_CHECKPOINTS} are kept): {labels[index]} - click for the list"
+            if count else "Checkpoints appear once data is loaded")
+
+    def _fill_checkpoint_menu(self):
+        menu = self.checkpoint_menu
+        menu.clear()
+        owner = self.owner
+        for number, (label, *_) in enumerate(owner.checkpoints):
+            action = menu.addAction(f"{number + 1}.  {label}")
+            action.setCheckable(True)
+            action.setChecked(number == owner.checkpoint_index)
+            action.triggered.connect(
+                lambda _=False, i=number: owner.go_to_checkpoint(i))
 
     def set_view(self, direction, up):
         renderer = self.owner.renderer
@@ -625,6 +727,7 @@ class VTKViewport:
     def apply_theme(self, name):
         self.theme = name
         self.mouse_guide.apply_theme(name)
+        self.update_checkpoints()
         colors = view_colors(name)
         self.apply_background()
         self.hint.GetTextProperty().SetColor(*colors["text"])
@@ -839,9 +942,43 @@ class RotationMixin:
         )
 
     def _pose_changed(self):
-        """Rotation / position changed: corner axes and guides follow."""
+        """Rotation / position changed: corner axes and guides follow,
+        and a checkpoint is taken once the change settles."""
         self._sync_axes()
         self.viewport.update_overlays()
+        later = getattr(self, "checkpoint_later", None)
+        if later and self.actor is not None:
+            later("Rotation {:.0f}°, {:.0f}°, {:.0f}° · position {:.4g}, "
+                  "{:.4g}, {:.4g}".format(self.rotation_x, self.rotation_y,
+                                          self.rotation_z, *self.position))
+
+    def reset_pose_view(self):
+        """All 6 values (rotation and position) back to 0."""
+        self.reset_transform()
+        if self.actor is not None:
+            self.actor.SetOrientation(0.0, 0.0, 0.0)
+            self.actor.SetPosition(0.0, 0.0, 0.0)
+            self._pose_changed()
+            self.console.appendPlainText("↺ Rotation and position reset to 0")
+
+    def pose_state(self):
+        return {
+            "rotation": (self.rotation_x, self.rotation_y, self.rotation_z),
+            "position": tuple(self.position),
+        }
+
+    def restore_pose(self, state):
+        for axis, value in zip("XYZ", state["rotation"]):
+            self._update_rotation_ui(axis, value)
+        self.position = [float(v) for v in state["position"]]
+        for axis, value in zip("XYZ", self.position):
+            self._show_position(axis, value)
+        if self.actor is not None:
+            self.actor.SetOrientation(*state["rotation"])
+            self.actor.SetPosition(*self.position)
+            self.renderer.ResetCameraClippingRange()
+        self._pose_changed()
+        self.vtk_widget.GetRenderWindow().Render()
 
     def _sync_axes(self):
         """Give the corner axes the model's rotation, so they show the
@@ -960,13 +1097,101 @@ def release_memory():
             pass
 
 
+MAX_CHECKPOINTS = 10
+CHECKPOINT_DELAY_MS = 700
+
+
+def _signature(value):
+    """Cheap identity of a snapshot: arrays / meshes by object (snapshots
+    keep them alive, they are never changed in place), numbers rounded."""
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return round(value, 6)
+    if isinstance(value, (tuple, list)):
+        return tuple(_signature(v) for v in value)
+    if isinstance(value, dict):
+        return tuple(sorted((k, _signature(v)) for k, v in value.items()))
+    if dataclasses.is_dataclass(value):
+        return repr(value)
+    return ("object", id(value))
+
+
 class TabMixin(RotationMixin):
     """Rotation plus the helpers every tab uses to talk to the user.
 
     Tabs that hold data implement ``has_data()`` and ``clear_data()``; the
     *Remove data* button (``add_remove_button``) asks, calls
     ``clear_data`` and frees the memory.
+
+    Checkpoints: tabs implement ``snapshot()`` (a dict of their whole
+    state, pose included) and ``restore(state)``; ``record_checkpoint``
+    stores one (the last ``MAX_CHECKPOINTS`` are kept, like undo
+    history: going back and changing something drops the later ones).
+    Snapshots share the arrays, so a checkpoint costs little memory.
     """
+
+    def init_checkpoints(self):
+        self.checkpoints = []          # [(label, state, signature)]
+        self.checkpoint_index = -1
+        self._restoring = False
+        self._checkpoint_label = ""
+        self._checkpoint_timer = QTimer(self.main_window)
+        self._checkpoint_timer.setSingleShot(True)
+        self._checkpoint_timer.setInterval(CHECKPOINT_DELAY_MS)
+        self._checkpoint_timer.timeout.connect(
+            lambda: self.record_checkpoint(self._checkpoint_label))
+
+    def checkpoint_later(self, label):
+        """Take a checkpoint once a burst of changes (slider drag) ends."""
+        if self._restoring or not self.has_data():
+            return
+        self._checkpoint_label = label
+        self._checkpoint_timer.start()
+
+    def record_checkpoint(self, label):
+        self._checkpoint_timer.stop()
+        if self._restoring or not self.has_data():
+            return
+        state = self.snapshot()
+        signature = _signature(state)
+        if (0 <= self.checkpoint_index < len(self.checkpoints)
+                and self.checkpoints[self.checkpoint_index][2] == signature):
+            return                         # nothing changed
+        del self.checkpoints[self.checkpoint_index + 1:]
+        self.checkpoints.append((label, state, signature))
+        del self.checkpoints[:-MAX_CHECKPOINTS]
+        self.checkpoint_index = len(self.checkpoints) - 1
+        self.viewport.update_checkpoints()
+
+    def go_to_checkpoint(self, index):
+        if self._checkpoint_timer.isActive():   # keep the latest change
+            self.record_checkpoint(self._checkpoint_label)
+        if not 0 <= index < len(self.checkpoints) or index == self.checkpoint_index:
+            return
+        label, state, _ = self.checkpoints[index]
+        self._restoring = True
+        try:
+            self.restore(state)
+        finally:
+            self._restoring = False
+        self.checkpoint_index = index
+        self.viewport.update_checkpoints()
+        self.notify(f"⟲ Checkpoint {index + 1}/{len(self.checkpoints)}: {label}")
+
+    def checkpoint_back(self):
+        if self._checkpoint_timer.isActive():
+            self.record_checkpoint(self._checkpoint_label)
+        self.go_to_checkpoint(self.checkpoint_index - 1)
+
+    def checkpoint_forward(self):
+        self.go_to_checkpoint(self.checkpoint_index + 1)
+
+    def clear_checkpoints(self):
+        self._checkpoint_timer.stop()
+        self.checkpoints = []
+        self.checkpoint_index = -1
+        self.viewport.update_checkpoints()
 
     def notify(self, text, level="info", dialog=False):
         """Log ``text`` to the console and the status bar; serious errors
@@ -1035,6 +1260,7 @@ class TabMixin(RotationMixin):
         self.actor = None
         self.actor_kind = None
         self.start_bounds = None
+        self.clear_checkpoints()          # they would keep the data in RAM
         self.reset_transform()
         self._pose_changed()
         for widget in self.rotation_widgets():

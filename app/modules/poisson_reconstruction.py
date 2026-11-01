@@ -752,12 +752,7 @@ class PoissonReconstruction(TabMixin):
         self.console.appendPlainText(title)
         self.console.appendPlainText(f"   {len(self.points):,} points with normals")
         self.source_name = data.source
-        self.file_label.setText(
-            f"{data.source or 'Received data'}\n{len(self.points):,} points"
-            + (f"\n{self.data_note}" if self.data_note else "")
-            + ("\nGround truth: original mesh" if self.reference is not None else ""))
-        self.file_label.setProperty("role", "file")
-        self.file_label.style().polish(self.file_label)
+        self._show_data_info()
         self.set_tab_info(file=data.source, points=len(self.points), triangles=None)
         self.notify(f"Loaded {data.source or 'data'} - reconstructing…", "success")
         if self.reference is not None:
@@ -775,6 +770,103 @@ class PoissonReconstruction(TabMixin):
         # Start the reconstruction in the background right away
         self._live_timer.stop()
         self._restart_reconstruction()
+
+    def _show_data_info(self):
+        self.file_label.setText(
+            f"{self.source_name or 'Received data'}\n{len(self.points):,} points"
+            + (f"\n{self.data_note}" if self.data_note else "")
+            + ("\nGround truth: original mesh" if self.reference is not None else ""))
+        self.file_label.setProperty("role", "file")
+        self.file_label.style().polish(self.file_label)
+
+    # =========================
+    # Checkpoints
+    # =========================
+    PARAMETER_WIDGETS = (
+        "spinBox_depth", "doubleSpinBox_width", "doubleSpinBox_scale",
+        "checkBox_linear_fit", "checkBox_preprocess", "doubleSpinBox_voxel",
+        "doubleSpinBox_density", "checkBox_crop", "spinBox_smooth",
+    )
+
+    def snapshot(self):
+        widgets = {}
+        for name in self.PARAMETER_WIDGETS:
+            widget = getattr(self, name)
+            widgets[name] = (widget.isChecked() if hasattr(widget, "isChecked")
+                             else widget.value())
+        return {
+            "points": self.points, "normals": self.normals,
+            "colors": self.colors, "source": self.source_name,
+            "data_note": self.data_note, "reference": self.reference,
+            "reference_name": self.reference_name,
+            "mesh": self.mesh_o3d, "mesh_arrays": self._mesh_arrays,
+            "mesh_colors": self._mesh_colors, "last_build": self._last_build,
+            "vertex_errors": self.vertex_errors, "last_record": self.last_record,
+            "algorithm": self.algorithm, "factors": dict(self.factors),
+            "widgets": widgets, **self.pose_state(),
+        }
+
+    def restore(self, state):
+        """Back to a checkpoint without recomputing anything (a running
+        reconstruction is ignored)."""
+        if self._sweep is not None:
+            self.cancel_sweep()
+        self._live_timer.stop()
+        self._pending_run = False
+        self._pending_eval = False
+        self._data_generation += 1
+        self.points, self.normals = state["points"], state["normals"]
+        self.colors, self.source_name = state["colors"], state["source"]
+        self.data_note = state["data_note"]
+        if state["reference"] is not self.reference:
+            self._reference_version += 1
+        self.reference = state["reference"]
+        self.reference_name = state["reference_name"]
+        self.mesh_o3d = state["mesh"]
+        self._mesh_arrays = state["mesh_arrays"]
+        self._mesh_colors = state["mesh_colors"]
+        self._last_build = state["last_build"]
+        self.vertex_errors = state["vertex_errors"]
+        self.last_record = state["last_record"]
+
+        # Parameters, without triggering a new reconstruction
+        self.algorithm = state["algorithm"]
+        self.factors = dict(state["factors"])
+        self.combo_algorithm.blockSignals(True)
+        self.combo_algorithm.setCurrentIndex(
+            self.combo_algorithm.findData(self.algorithm))
+        self.combo_algorithm.blockSignals(False)
+        self._show_algorithm_controls()
+        for name, value in state["widgets"].items():
+            widget = getattr(self, name)
+            widget.blockSignals(True)
+            if hasattr(widget, "setChecked"):
+                widget.setChecked(value)
+            else:
+                widget.setValue(value)
+            widget.blockSignals(False)
+
+        self._show_data_info()
+        self._update_reference_label()
+        self.report.show_record(self.last_record)
+        self._set_controls_enabled(True)
+        self.btn_remove.setEnabled(True)
+        self.btn_export.setEnabled(self.mesh_o3d is not None)
+        self.restore_pose(state)
+        if self._mesh_arrays is not None:
+            self._reset_camera_next = False
+            self._render_mesh()
+            triangles = len(self._mesh_arrays[2])
+        else:
+            if self.actor is not None:
+                self.renderer.RemoveActor(self.actor)
+                self.actor = None
+            triangles = None
+        self.set_tab_info(file=self.source_name, points=len(self.points),
+                          triangles=triangles)
+        busy = getattr(self.main_window, "set_busy", None)
+        if busy and self._worker is None:
+            busy(False)
 
     # =========================
     # Remove data
@@ -977,6 +1069,8 @@ class PoissonReconstruction(TabMixin):
                               triangles=len(result["triangles"]))
             # A newer job may already be queued; export only the latest
             self.btn_export.setEnabled(not self._pending_run)
+            self.record_checkpoint(
+                f"{ALGORITHM_LABELS[result['algorithm']]} · {result['setting']}")
         elif self.heatmap_enabled:
             self._render_mesh()
 
