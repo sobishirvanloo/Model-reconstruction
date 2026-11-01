@@ -302,7 +302,7 @@ class Processing(TabMixin):
         self.Point_density_spinbox.setValue(0.0)
         self.Point_density_spinbox.blockSignals(False)
 
-        self.reset_rotation()
+        self.reset_transform()
         self.render_points()
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)

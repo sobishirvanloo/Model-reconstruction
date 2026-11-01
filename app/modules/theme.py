@@ -11,6 +11,7 @@ turned into an application-wide Qt style sheet + QPalette.  Widgets carry
     QLabel[role="hint"]              small explanatory text
     QFrame[role="panel"]             side panel background
     QPlainTextEdit#console           log console
+    QFrame#mouseGuide                mouse help strip under a 3D view
 
 The 3D viewports read their colours from ``view_colors``.
 """
@@ -175,6 +176,16 @@ QPushButton[variant="link"]:disabled {{ color: {p['text_disabled']}; }}
 QPushButton[variant="danger"] {{ color: {p['error']}; border-color: {p['error']}; }}
 QPushButton[variant="danger"]:hover {{ background-color: {p['error']}; color: {p['on_primary']}; }}
 QPushButton[variant="danger"]:disabled {{ color: {p['text_disabled']}; border-color: {p['border']}; }}
+
+/* ---------- mouse guide under the 3D views ---------- */
+QFrame#mouseGuide {{
+    background-color: {p['surface']}; border: none;
+    border-top: 1px solid {p['border']}; }}
+QLabel[role="mouseguide"] {{
+    color: {p['text_muted']}; font-size: 8pt; background: transparent; border: none; }}
+QFrame#mouseGuide QToolButton {{
+    color: {p['text_muted']}; border: none; padding: 0 4px; font-size: 8pt; }}
+QFrame#mouseGuide QToolButton:hover {{ color: {p['error']}; }}
 
 /* ---------- inputs ---------- */
 QSpinBox, QDoubleSpinBox, QLineEdit, QComboBox {{

@@ -765,7 +765,7 @@ class PoissonReconstruction(TabMixin):
         self._set_controls_enabled(True)
         self.btn_export.setEnabled(False)
         self.btn_remove.setEnabled(True)
-        self.reset_rotation()
+        self.reset_transform()
 
         # Start the reconstruction in the background right away
         self._live_timer.stop()

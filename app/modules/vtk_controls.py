@@ -3,10 +3,13 @@
 This module centralises code that used to be copy-pasted into every tab
 module (import_mesh / point_processing / poisson_reconstruction):
 
-* ``CustomInteractorStyle`` — mouse-wheel (dolly) zoom.
+* ``CustomInteractorStyle`` — mouse: rotate / move the model anywhere in
+                           the view, wheel (dolly) zoom.
+* ``MouseGuide``         — small closable strip explaining the mouse.
 * ``VTKViewport``        — console + camera toolbar + VTK render window
                            (themed gradient, empty-state hint, axes).
-* ``RotationMixin``      — slider/spinbox <-> actor rotation logic (live).
+* ``RotationMixin``      — slider/spinbox <-> actor rotation and position
+                           (live).
 * ``TabMixin``           — rotation + messages / status-bar helpers.
 """
 
@@ -14,35 +17,132 @@ import ctypes
 import gc
 import sys
 
+import math
+
 import numpy as np
 import vtk
+from PyQt5.QtCore import QRectF, Qt
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PyQt5.QtWidgets import (
+    QDoubleSpinBox,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSlider,
     QStyle,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
 )
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from modules import settings
 from modules.geometry_utils import vtk_matrix_to_numpy
-from modules.point_data import insert_widget, move_widget_after
-from modules.theme import LIGHT, view_colors
+from modules.point_data import add_section, insert_widget, move_widget_after
+from modules.theme import LIGHT, PALETTES, view_colors
+
+
+def orientation_matrix(orientation):
+    """vtkMatrix4x4 of a pure rotation given as vtkProp3D angles."""
+    pose = vtk.vtkActor()
+    pose.SetOrientation(*orientation)
+    return pose.GetMatrix()
 
 
 class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
-    """Default trackball interaction style plus mouse-wheel zooming."""
+    """Mouse controls of every view (the model does not have to be under
+    the cursor):
+
+    * left drag   - rotate the model about its centre
+    * right drag  - move the model with the mouse (screen plane);
+      the middle button does the same
+    * wheel       - zoom (camera dolly)
+
+    ``owner.actor`` is changed and ``owner.on_actor_moved()`` keeps the
+    side panel in sync.  An observer on a button / move event replaces
+    VTK's own handler, which would only act on the prop under the cursor.
+    """
 
     ZOOM_IN_FACTOR = 1.1
     ZOOM_OUT_FACTOR = 0.9
+    DEGREES_PER_PIXEL = 0.4
 
-    def __init__(self, renderer, parent=None):
-        self.AddObserver("MouseWheelForwardEvent", self.zoom_in)
-        self.AddObserver("MouseWheelBackwardEvent", self.zoom_out)
+    def __init__(self, renderer, owner=None):
         self.renderer = renderer
+        self.owner = owner
+        self._mode = None             # "rotate" / "move" while dragging
+        self._last = None
+        for event, handler in (
+            ("MouseWheelForwardEvent", self.zoom_in),
+            ("MouseWheelBackwardEvent", self.zoom_out),
+            ("LeftButtonPressEvent", lambda *_: self._begin("rotate")),
+            ("RightButtonPressEvent", lambda *_: self._begin("move")),
+            ("MiddleButtonPressEvent", lambda *_: self._begin("move")),
+            ("LeftButtonReleaseEvent", self._end),
+            ("RightButtonReleaseEvent", self._end),
+            ("MiddleButtonReleaseEvent", self._end),
+            ("MouseMoveEvent", self._drag),
+        ):
+            self.AddObserver(event, handler)
+
+    def _actor(self):
+        return getattr(self.owner, "actor", None)
+
+    def _begin(self, mode):
+        if self._actor() is None:
+            return
+        self._mode = mode
+        self._last = self.GetInteractor().GetEventPosition()
+
+    def _end(self, *_):
+        self._mode = None
+
+    def _drag(self, *_):
+        actor = self._actor()
+        if self._mode is None or actor is None:
+            return
+        x, y = self.GetInteractor().GetEventPosition()
+        last_x, last_y = self._last
+        self._last = (x, y)
+        if self._mode == "rotate":
+            self._rotate(actor, x - last_x, y - last_y)
+        else:
+            self._move(actor, (last_x, last_y), (x, y))
+        self.renderer.ResetCameraClippingRange()
+        if self.owner is not None:
+            self.owner.on_actor_moved()
+        self.GetInteractor().GetRenderWindow().Render()
+
+    def _rotate(self, actor, dx, dy):
+        """Turn about the screen axes: the side under the mouse follows it."""
+        camera = self.renderer.GetActiveCamera()
+        up = np.array(camera.GetViewUp())
+        right = np.cross(camera.GetDirectionOfProjection(), up)
+        transform = vtk.vtkTransform()
+        transform.PostMultiply()
+        transform.SetMatrix(orientation_matrix(actor.GetOrientation()))
+        transform.RotateWXYZ(dx * self.DEGREES_PER_PIXEL, *up)
+        transform.RotateWXYZ(-dy * self.DEGREES_PER_PIXEL, *right)
+        actor.SetOrientation(transform.GetOrientation())
+
+    def _move(self, actor, start, end):
+        """Shift by the mouse motion, measured at the model's depth."""
+        renderer = self.renderer
+        renderer.SetWorldPoint(*actor.GetCenter(), 1.0)
+        renderer.WorldToDisplay()
+        depth = renderer.GetDisplayPoint()[2]
+
+        def to_world(point):
+            renderer.SetDisplayPoint(point[0], point[1], depth)
+            renderer.DisplayToWorld()
+            world = np.array(renderer.GetWorldPoint())
+            return world[:3] / world[3]
+
+        actor.AddPosition(*(to_world(end) - to_world(start)))
 
     def _dolly(self, factor):
         cam = self.renderer.GetActiveCamera()
@@ -64,6 +164,85 @@ CAMERA_VIEWS = {
     "Side": ((1, 0, 0), (0, 1, 0)),
     "Iso": ((1, 1, 1), (0, 1, 0)),
 }
+
+
+def mouse_icon(button, color, accent, size=20):
+    """Small drawn mouse with ``button`` ("left" / "right" / "wheel")
+    highlighted."""
+    scale = 2                       # drawn at 2x, crisp on HiDPI
+    pixmap = QPixmap(int(size * 0.75) * scale, size * scale)
+    pixmap.fill(Qt.transparent)
+    pixmap.setDevicePixelRatio(scale)
+    w, h = size * 0.75, size
+    body = QRectF(1, 1, w - 2, h - 2)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    path = QPainterPath()
+    path.addRoundedRect(body, w * 0.45, w * 0.45)
+    split = body.top() + body.height() * 0.42
+    if button in ("left", "right"):
+        half = QPainterPath()
+        x = body.left() if button == "left" else body.center().x()
+        half.addRect(QRectF(x, body.top(), body.width() / 2, split - body.top()))
+        painter.fillPath(path.intersected(half), QColor(accent))
+    pen = QPen(QColor(color), 1.2)
+    painter.setPen(pen)
+    painter.drawPath(path)
+    painter.drawLine(int(body.left()), int(split), int(body.right()), int(split))
+    painter.drawLine(int(body.center().x()), int(body.top()),
+                     int(body.center().x()), int(split))
+    wheel = QRectF(body.center().x() - 1.6, body.top() + 3, 3.2, 5)
+    if button == "wheel":
+        painter.setBrush(QColor(accent))
+        painter.setPen(QPen(QColor(accent), 1))
+    else:
+        painter.setBrush(QColor(color))
+    painter.drawRoundedRect(wheel, 1.5, 1.5)
+    painter.end()
+    return pixmap
+
+
+class MouseGuide(QFrame):
+    """Tiny strip under a view showing the mouse controls; the ✕ hides it
+    until the application is started again (or *View ▸ Mouse Guide*)."""
+
+    ITEMS = (
+        ("left", "Drag: rotate"),
+        ("right", "Drag: move"),
+        ("wheel", "Scroll: zoom"),
+    )
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("mouseGuide")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 2, 4, 2)
+        layout.setSpacing(4)
+        self.icons = []
+        for button, text in self.ITEMS:
+            icon = QLabel(self)
+            label = QLabel(text, self)
+            label.setProperty("role", "mouseguide")
+            self.icons.append((icon, button))
+            layout.addWidget(icon)
+            layout.addWidget(label)
+            layout.addSpacing(12)
+        layout.addStretch(1)
+        self.close_button = QToolButton(self)
+        self.close_button.setText("✕")
+        self.close_button.setAutoRaise(True)
+        self.close_button.setToolTip("Hide the mouse guide "
+                                     "(View > Mouse Guide shows it again)")
+        self.close_button.clicked.connect(self.hide)
+        layout.addWidget(self.close_button)
+        self.setToolTip("Left drag anywhere: rotate · right drag: move the "
+                        "model · wheel: zoom")
+
+    def apply_theme(self, name):
+        palette = PALETTES[name]
+        for icon, button in self.icons:
+            icon.setPixmap(mouse_icon(button, palette["text_muted"],
+                                      palette["primary"]))
 
 
 class VTKViewport:
@@ -96,6 +275,8 @@ class VTKViewport:
         layout.addWidget(self.toolbar)
         owner.vtk_widget = QVTKRenderWindowInteractor(frame_view)
         layout.addWidget(owner.vtk_widget)
+        self.mouse_guide = MouseGuide(frame_view)
+        layout.addWidget(self.mouse_guide)
 
         owner.renderer = vtk.vtkRenderer()
         owner.renderer.GradientBackgroundOn()
@@ -105,8 +286,10 @@ class VTKViewport:
 
         # ---------- VTK Initialization ----------
         owner.interactor.Initialize()
-        style = CustomInteractorStyle(owner.renderer)
-        owner.interactor.SetInteractorStyle(style)
+        # Keep a Python reference: otherwise the wrapper is collected and
+        # VTK hands back a bare one without the attributes set in __init__
+        owner.interactor_style = CustomInteractorStyle(owner.renderer, owner)
+        owner.interactor.SetInteractorStyle(owner.interactor_style)
 
         self.setup_axes(owner)
 
@@ -262,6 +445,7 @@ class VTKViewport:
 
     def apply_theme(self, name):
         self.theme = name
+        self.mouse_guide.apply_theme(name)
         colors = view_colors(name)
         renderer = self.owner.renderer
         renderer.SetBackground(*colors["background_bottom"])
@@ -299,8 +483,11 @@ class VTKViewport:
         owner.marker.InteractiveOff()
 
 
+POSITION_SLIDER_STEPS = 1000
+
+
 class RotationMixin:
-    """Slider/spinbox <-> actor rotation, shared by every tab.
+    """Slider/spinbox <-> actor rotation and position, shared by every tab.
 
     The spinbox/slider values are *absolute* angles and map 1:1 onto
     ``vtkProp3D.SetOrientation`` / ``GetOrientation``, so the UI and the
@@ -308,6 +495,9 @@ class RotationMixin:
     commute and did).  The actor origin is placed at the centre of its
     bounds so it rotates in place - the same pivot the mouse uses.
     Moving a slider rotates the model immediately.
+
+    The position X/Y/Z (``vtkProp3D.SetPosition``, an offset in model
+    units) works the same way; its range follows the model size.
 
     Expected instance attributes:
 
@@ -327,6 +517,8 @@ class RotationMixin:
         self.rotation_x = 0.0
         self.rotation_y = 0.0
         self.rotation_z = 0.0
+        self.position = [0.0, 0.0, 0.0]
+        self.position_range = 1.0
 
     def setup_rotation_controls(self):
         """Wire the X/Y/Z slider <-> spinbox pairs together."""
@@ -351,20 +543,54 @@ class RotationMixin:
         # Sliders rotate live, so the button belongs right under them
         move_widget_after(self.pushButton, self.slider_Z)
 
-        # Update spinboxes/sliders when the actor is rotated with the mouse
-        self.interactor.AddObserver(
-            "EndInteractionEvent", self.update_spinbox_from_actor
-        )
-        # ... and turn the axes with the model while dragging
-        self.interactor.GetInteractorStyle().AddObserver(
-            "InteractionEvent", lambda *_: self._sync_axes()
-        )
+        self.setup_position_controls()
+
+    def setup_position_controls(self):
+        """X/Y/Z position spinbox + slider pairs (built like the rotation
+        ones) and a *Reset position* button, below *Reset rotation*."""
+        parent = self.pushButton.parentWidget()
+        anchor = self.pushButton
+        self.position_boxes = {}
+        self.position_sliders = {}
+        labels = []
+        for axis in "XYZ":
+            label = QLabel(f"{axis}-Axis (position)", parent)
+            box = QDoubleSpinBox(parent)
+            slider = QSlider(Qt.Horizontal, parent)
+            slider.setRange(-POSITION_SLIDER_STEPS, POSITION_SLIDER_STEPS)
+            tip = (f"Move the model along {axis} (model units; "
+                   "you can also drag it with the right mouse button)")
+            box.setToolTip(tip)
+            slider.setToolTip(tip)
+            box.valueChanged.connect(
+                lambda v, a=axis: self.set_position(a, v))
+            slider.valueChanged.connect(
+                lambda v, a=axis: self.set_position(
+                    a, v * self.position_range / POSITION_SLIDER_STEPS))
+            for widget in (label, box, slider):
+                insert_widget(anchor, widget, after=True)
+                anchor = widget
+            labels.append(label)
+            self.position_boxes[axis] = box
+            self.position_sliders[axis] = slider
+
+        self.btn_reset_position = QPushButton("Reset position", parent)
+        self.btn_reset_position.setIcon(
+            parent.style().standardIcon(QStyle.SP_ArrowBack))
+        self.btn_reset_position.setToolTip("Move the model back to 0, 0, 0")
+        self.btn_reset_position.clicked.connect(self.reset_position_view)
+        insert_widget(anchor, self.btn_reset_position, after=True)
+        add_section(labels[0], "Position")
+        self._set_position_range(1.0)
 
     def rotation_widgets(self):
+        """Every rotation and position control (enabled with the data)."""
         return (
             self.spinBox_X, self.spinBox_Y, self.spinBox_Z,
             self.slider_X, self.slider_Y, self.slider_Z,
             self.pushButton,
+            *self.position_boxes.values(), *self.position_sliders.values(),
+            self.btn_reset_position,
         )
 
     def sync_rotation(self, widget_to_update, axis, value):
@@ -375,9 +601,47 @@ class RotationMixin:
         self._apply_orientation()        # live rotation
 
     def reset_rotation(self):
-        """Zero the angles and the widgets (e.g. after a new import)."""
+        """Zero the angles and the widgets."""
         for axis in "XYZ":
             self._update_rotation_ui(axis, 0.0)
+
+    def reset_transform(self):
+        """Zero rotation and position (e.g. after a new import)."""
+        self.reset_rotation()
+        self.reset_position()
+
+    def reset_position(self):
+        self.position = [0.0, 0.0, 0.0]
+        for axis in "XYZ":
+            self._show_position(axis, 0.0)
+
+    def reset_position_view(self):
+        self.reset_position()
+        if self.actor is not None:
+            self.actor.SetPosition(*self.position)
+            self.renderer.ResetCameraClippingRange()
+            self.vtk_widget.GetRenderWindow().Render()
+            self.console.appendPlainText("↺ Position reset to 0, 0, 0")
+
+    def set_position(self, axis, value):
+        """Spinbox / slider changed: move the model live."""
+        self.position["XYZ".index(axis)] = float(value)
+        self._show_position(axis, value)
+        if self.actor is not None:
+            self.actor.SetPosition(*self.position)
+            self.renderer.ResetCameraClippingRange()
+            self.vtk_widget.GetRenderWindow().Render()
+
+    def on_actor_moved(self):
+        """The mouse rotated / moved the model: update the panel."""
+        if self.actor is None:
+            return
+        for axis, value in zip("XYZ", self.actor.GetOrientation()):
+            self._update_rotation_ui(axis, value)
+        self.position = [float(v) for v in self.actor.GetPosition()]
+        for axis, value in zip("XYZ", self.position):
+            self._show_position(axis, value)
+        self._sync_axes()
 
     def reset_rotation_view(self):
         self.reset_rotation()
@@ -403,10 +667,8 @@ class RotationMixin:
         )
         # vtkAxesActor draws its parts with its *user transform* only
         # (SetOrientation is ignored), so pass the rotation that way.
-        pose = vtk.vtkActor()
-        pose.SetOrientation(*orientation)
         transform = vtk.vtkTransform()
-        transform.SetMatrix(pose.GetMatrix())
+        transform.SetMatrix(orientation_matrix(orientation))
         self.marker.GetOrientationMarker().SetUserTransform(transform)
 
     def _apply_orientation(self):
@@ -438,6 +700,10 @@ class RotationMixin:
             (bounds[4] + bounds[5]) / 2.0,
         )
         actor.SetOrientation(self.rotation_x, self.rotation_y, self.rotation_z)
+        actor.SetPosition(*self.position)
+        diagonal = math.dist(bounds[0::2], bounds[1::2])
+        self._set_position_range(
+            max(diagonal, *(abs(v) for v in self.position), 1e-6))
 
         self.actor = actor
         self.renderer.AddActor(actor)
@@ -459,12 +725,33 @@ class RotationMixin:
 
     # ---------- internals ----------
 
-    def update_spinbox_from_actor(self, caller=None, event=None):
-        """Sync the UI after the user rotates the actor with the mouse."""
-        if self.actor is None:
+    def _set_position_range(self, extent):
+        """Spinboxes / sliders cover +-``extent`` (the model diagonal)."""
+        self.position_range = extent
+        decimals = min(6, max(1, 3 - math.floor(math.log10(extent))))
+        for axis, value in zip("XYZ", self.position):
+            box = self.position_boxes[axis]
+            box.blockSignals(True)
+            box.setDecimals(decimals)
+            box.setRange(-extent, extent)
+            box.setSingleStep(extent / 100)
+            box.blockSignals(False)
+            self._show_position(axis, value)
+
+    def _show_position(self, axis, value):
+        """Show ``value`` in the spinbox and slider without feedback."""
+        if abs(value) > self.position_range:     # dragged further away
+            self._set_position_range(abs(value) * 1.5)
             return
-        for axis, value in zip("XYZ", self.actor.GetOrientation()):
-            self._update_rotation_ui(axis, value)
+        box = self.position_boxes[axis]
+        slider = self.position_sliders[axis]
+        for widget, shown in (
+            (box, value),
+            (slider, round(value / self.position_range * POSITION_SLIDER_STEPS)),
+        ):
+            widget.blockSignals(True)
+            widget.setValue(shown)
+            widget.blockSignals(False)
 
     def _update_rotation_ui(self, axis, value):
         setattr(self, f"rotation_{axis.lower()}", float(value))
@@ -560,7 +847,7 @@ class TabMixin(RotationMixin):
             self.renderer.RemoveActor(self.actor)
         self.actor = None
         self.actor_kind = None
-        self.reset_rotation()
+        self.reset_transform()
         self._sync_axes()
         for widget in self.rotation_widgets():
             widget.setEnabled(False)

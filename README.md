@@ -28,7 +28,13 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 * **Camera toolbar** above every view: Reset, Front, Top, Side, Iso and
   Screenshot (PNG, rendered off-screen).
 * Side panels are split into sections with tooltips on every parameter;
-  rotation sliders act **live** (*Reset rotation* sets them back to 0°).
+  rotation and **position** (X/Y/Z, model units) sliders act **live**
+  (*Reset rotation* / *Reset position* set them back to 0).
+* **Mouse, anywhere in the view** (the model need not be under the cursor):
+  left drag rotates, right (or middle) drag moves the model with the mouse,
+  the wheel zooms. Panel values and the corner axes follow the model.
+  A small guide under each view shows this; ✕ hides it (*View ▸ Mouse
+  Guide* brings it back, and it shows again on the next start).
 * Tabs read as steps (1 Import → 2 Process → 3 Reconstruct) and get a
   check mark once they hold data.
 * **🗑 Remove data** in every tab (or *File ▸ Remove Data*, Ctrl+W / for

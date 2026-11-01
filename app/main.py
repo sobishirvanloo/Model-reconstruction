@@ -39,9 +39,9 @@ SHORTCUTS = (
     ("Ctrl+R", "Quality report"),
     ("Ctrl+T", "Switch light / dark theme"),
     ("Ctrl+Q", "Quit"),
-    ("Mouse: left drag", "Rotate the model"),
+    ("Mouse: left drag", "Rotate the model (anywhere in the view)"),
+    ("Mouse: right / middle drag", "Move the model"),
     ("Mouse: wheel", "Zoom"),
-    ("Mouse: middle drag", "Move the model"),
 )
 
 
@@ -227,6 +227,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, "action_dark"):
             self.action_dark.setChecked(name == theme.DARK)
 
+    def show_mouse_guide(self, visible):
+        for tab in self.tabs:
+            tab.viewport.mouse_guide.setVisible(visible)
+
     def toggle_theme(self, dark):
         self.set_theme(theme.DARK if dark else theme.LIGHT)
 
@@ -284,6 +288,16 @@ class MainWindow(QMainWindow):
                     self.current_tab().viewport.set_view(d, u),
                 f"Ctrl+{number}")
         view_menu.addSeparator()
+        self.action_mouse_guide = self._action(
+            view_menu, "&Mouse Guide", self.show_mouse_guide,
+            tip="Show / hide the mouse help under the 3D views")
+        self.action_mouse_guide.setCheckable(True)
+        self.action_mouse_guide.setChecked(True)
+        for tab in self.tabs:
+            # ✕ on one strip hides them all (and unticks the menu)
+            tab.viewport.mouse_guide.close_button.clicked.connect(
+                lambda: self.action_mouse_guide.isChecked()
+                and self.action_mouse_guide.trigger())
         self.action_dark = self._action(view_menu, "&Dark Theme",
                                         self.toggle_theme, "Ctrl+T")
         self.action_dark.setCheckable(True)

@@ -19,6 +19,7 @@ from modules.point_data import (
     add_section,
     ask_save_point_cloud,
     insert_widget,
+    make_scrollable,
 )
 from modules.vtk_controls import TabMixin, VTKViewport
 
@@ -84,6 +85,9 @@ class Geometry(TabMixin):
             lambda: self.send_data("reconstruction")
         )
         self._build_panel()
+
+        # Position controls made the panel taller: let it scroll
+        make_scrollable(self.btn_export.parentWidget())
 
         # Disable controls until a file is imported
         for widget in self.rotation_widgets() + self._data_buttons():
@@ -265,7 +269,7 @@ class Geometry(TabMixin):
             widget.setEnabled(True)
         self.btn_remove.setEnabled(True)
 
-        self.reset_rotation()
+        self.reset_transform()
         self.render_geometry()
         self.set_tab_info(
             file=self.source_name, points=len(self.points),
