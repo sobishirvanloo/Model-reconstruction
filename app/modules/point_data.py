@@ -60,6 +60,7 @@ class PointCloudData:
     source: str = field(default="")
     reference: Optional[tuple] = None
     note: str = ""          # how the data was degraded (e.g. "noise σ=0.5%")
+    colors: Optional[np.ndarray] = None   # RGB 0..1 from the file, if any
 
     def __post_init__(self):
         self.points = np.asarray(self.points, dtype=float)[:, :3]
@@ -71,6 +72,10 @@ class PointCloudData:
                     f"{len(normals)} normals"
                 )
             self.normals = normalize(normals)
+        if self.colors is not None:
+            colors = np.asarray(self.colors, dtype=float)[:, :3]
+            # colours are optional: drop them rather than fail
+            self.colors = colors if len(colors) == len(self.points) else None
 
     def __len__(self):
         return len(self.points)
@@ -86,6 +91,7 @@ class PointCloudData:
             self.source,
             self.reference,
             self.note,
+            None if self.colors is None else self.colors.copy(),
         )
 
     def transformed(self, matrix):
@@ -96,7 +102,8 @@ class PointCloudData:
             vertices, triangles = self.reference
             vertices, _ = apply_transform(matrix, vertices)
             reference = (vertices, triangles)
-        return PointCloudData(points, normals, self.source, reference, self.note)
+        return PointCloudData(points, normals, self.source, reference,
+                              self.note, self.colors)
 
     def with_normals(self, voxel_size=0.0):
         """Copy that is guaranteed to have (oriented) normals."""
@@ -107,7 +114,7 @@ class PointCloudData:
         estimate_oriented_normals(pcd, voxel_size=voxel_size)
         return PointCloudData(
             self.points.copy(), np.asarray(pcd.normals).copy(), self.source,
-            self.reference, self.note,
+            self.reference, self.note, self.colors,
         )
 
     # =========================
@@ -123,7 +130,8 @@ class PointCloudData:
             if len(pcd.points) == 0:
                 raise ValueError(f"{name}: no points found")
             normals = np.asarray(pcd.normals) if pcd.has_normals() else None
-            return cls(np.asarray(pcd.points), normals, name)
+            colors = np.asarray(pcd.colors) if pcd.has_colors() else None
+            return cls(np.asarray(pcd.points), normals, name, colors=colors)
 
         data = load_array(path)
         normals = data[:, 3:6] if data.shape[1] >= 6 else None
@@ -137,6 +145,8 @@ class PointCloudData:
             pcd.points = o3d.utility.Vector3dVector(self.points)
             if self.has_normals:
                 pcd.normals = o3d.utility.Vector3dVector(self.normals)
+            if self.colors is not None:
+                pcd.colors = o3d.utility.Vector3dVector(self.colors)
             if not o3d.io.write_point_cloud(path, pcd, write_ascii=False):
                 raise IOError(f"could not write {path}")
             return
@@ -185,7 +195,7 @@ def ask_open_point_cloud(parent, title, normals_required, path=None):
     if not normals_path:
         return None if normals_required else data
     normals = load_array(normals_path)[:, :3]
-    return PointCloudData(data.points, normals, data.source)
+    return PointCloudData(data.points, normals, data.source, colors=data.colors)
 
 
 def ask_save_point_cloud(parent, data, default_name):

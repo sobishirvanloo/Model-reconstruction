@@ -9,7 +9,7 @@ from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QLabel, QStyle
 
 from modules.degradation import Degradation
-from modules.geometry_utils import normalize, polydata_from_numpy
+from modules.geometry_utils import normalize, polydata_from_numpy, transfer_colors
 from modules.point_data import (
     PointCloudData,
     add_button_after,
@@ -57,6 +57,8 @@ class Processing(TabMixin):
         self.normals = None           # as imported (None if not provided)
         self.points_changed = None    # after voxel / shuffle
         self.normals_changed = None
+        self.colors = None            # RGB from the file, if any
+        self.colors_changed = None
         self.shuffled = False
         self.source_name = ""
         self.reference = None
@@ -253,7 +255,11 @@ class Processing(TabMixin):
         ``reset_camera`` may be disabled when only the density changes so
         that the current camera position is kept.
         """
-        polydata = polydata_from_numpy(self.points_changed, self.normals_changed)
+        # Colours follow the points through voxel / degradation / shuffle
+        self.colors_changed = transfer_colors(
+            self.points, self.colors, self.points_changed)
+        polydata = polydata_from_numpy(
+            self.points_changed, self.normals_changed, colors=self.colors_changed)
 
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(polydata)
@@ -275,6 +281,7 @@ class Processing(TabMixin):
     def load_data(self, data, title):
         self.points = data.points.copy()
         self.normals = data.normals.copy() if data.has_normals else None
+        self.colors = None if data.colors is None else data.colors.copy()
         self.points_changed = self.points.copy()
         self.normals_changed = (
             self.normals.copy() if self.normals is not None else None
@@ -336,6 +343,8 @@ class Processing(TabMixin):
         self.normals = None
         self.points_changed = None
         self.normals_changed = None
+        self.colors = None
+        self.colors_changed = None
         self.shuffled = False
         self.source_name = ""
         self.reference = None
@@ -355,7 +364,7 @@ class Processing(TabMixin):
         note = "" if self.degradation.is_identity else self.degradation.describe()
         data = PointCloudData(
             self.points_changed, self.normals_changed, self.source_name,
-            self.reference, note,
+            self.reference, note, self.colors_changed,
         )
         if not data.has_normals:
             self.console.appendPlainText("⏳ Estimating normals…")

@@ -1,5 +1,6 @@
 """Persistent user preferences (QSettings): theme, last folder, recent files."""
 
+import json
 import os
 
 from PyQt5.QtCore import QSettings
@@ -50,3 +51,17 @@ def add_recent(path):
 
 def clear_recent():
     _store().setValue("recent_files", [])
+
+
+def view_settings(kind):
+    """Saved appearance settings (``"object"`` / ``"background"``) as a
+    dict - empty when nothing was saved or the value is unreadable."""
+    try:
+        values = json.loads(_store().value(f"view/{kind}", "") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return values if isinstance(values, dict) else {}
+
+
+def set_view_settings(kind, values):
+    _store().setValue(f"view/{kind}", json.dumps(values))

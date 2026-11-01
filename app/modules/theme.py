@@ -20,7 +20,7 @@ import os
 import tempfile
 
 from PyQt5.QtCore import QPointF, Qt
-from PyQt5.QtGui import QColor, QImage, QPainter, QPalette, QPolygonF
+from PyQt5.QtGui import QColor, QImage, QPainter, QPalette, QPen, QPolygonF
 
 LIGHT = "light"
 DARK = "dark"
@@ -122,6 +122,23 @@ def _arrow_images(p):
                 painter.end()
                 image.save(path)
             paths[f"{direction}{name}"] = path.replace("\\", "/")
+
+    # Check mark for checkbox indicators
+    path = os.path.join(folder, f"check_{p['on_primary'].lstrip('#')}.png")
+    if not os.path.exists(path):
+        image = QImage(28, 28, QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(QColor(p["on_primary"]), 3.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPolyline(QPolygonF(
+            [QPointF(6, 14.5), QPointF(11.5, 20), QPointF(22, 8)]))
+        painter.end()
+        image.save(path)
+    paths["check"] = path.replace("\\", "/")
     return paths
 
 
@@ -218,6 +235,16 @@ QComboBox QAbstractItemView {{
     border: 1px solid {p['border_strong']};
     selection-background-color: {p['selection']}; selection-color: {p['selection_text']}; }}
 QCheckBox {{ spacing: 8px; background: transparent; }}
+QCheckBox::indicator {{
+    width: 14px; height: 14px; border-radius: 4px;
+    border: 1px solid {p['border_strong']}; background-color: {p['surface']}; }}
+QCheckBox::indicator:hover {{ border-color: {p['primary']}; }}
+QCheckBox::indicator:checked {{
+    background-color: {p['primary']}; border-color: {p['primary']};
+    image: url({arrows['check']}); }}
+QCheckBox::indicator:disabled {{
+    background-color: {p['surface_alt']}; border-color: {p['border']}; }}
+QCheckBox::indicator:checked:disabled {{ background-color: {p['border_strong']}; }}
 QCheckBox:disabled {{ color: {p['text_disabled']}; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: {p['border']}; border-radius: 2px; }}

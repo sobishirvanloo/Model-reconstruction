@@ -124,11 +124,12 @@ def apply_transform(matrix, points, normals=None):
 # =========================
 # VTK conversion (vectorised - no Python loops)
 # =========================
-def polydata_from_numpy(points, normals=None, triangles=None):
+def polydata_from_numpy(points, normals=None, triangles=None, colors=None):
     """Build vtkPolyData from numpy arrays.
 
     With ``triangles`` the result is a surface, otherwise every point is
-    emitted as a vertex cell (point cloud).
+    emitted as a vertex cell (point cloud).  ``colors`` (RGB in 0..1) are
+    stored as the active ``Colors`` scalars.
     """
     points = np.ascontiguousarray(points, dtype=np.float64)
     n = len(points)
@@ -167,4 +168,25 @@ def polydata_from_numpy(points, normals=None, triangles=None):
         vtk_normals.SetName("Normals")
         polydata.GetPointData().SetNormals(vtk_normals)
 
+    if colors is not None and len(colors) == n:
+        rgb = np.ascontiguousarray(
+            np.clip(np.asarray(colors)[:, :3] * 255.0, 0, 255), dtype=np.uint8)
+        vtk_colors = numpy_support.numpy_to_vtk(rgb, deep=True)
+        vtk_colors.SetName("Colors")
+        polydata.GetPointData().SetScalars(vtk_colors)
+
     return polydata
+
+
+def transfer_colors(source_points, source_colors, target_points):
+    """Colour each target point like its nearest source point - keeps the
+    original colours through downsampling, noise, shuffling and
+    reconstruction.  ``None`` when there are no colours."""
+    if source_colors is None or target_points is None or len(target_points) == 0:
+        return None
+    search = o3d.core.nns.NearestNeighborSearch(
+        o3d.core.Tensor(np.ascontiguousarray(source_points, dtype=np.float32)))
+    search.knn_index()
+    index, _ = search.knn_search(
+        o3d.core.Tensor(np.ascontiguousarray(target_points, dtype=np.float32)), 1)
+    return np.asarray(source_colors)[index.numpy().ravel()]

@@ -25,8 +25,22 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 * **Status bar**: current file, point / triangle counts, a progress bar while
   reconstructing or sweeping, and coloured success / error messages
   (serious errors also open a dialog).
-* **Camera toolbar** above every view: Reset, Front, Top, Side, Iso and
-  Screenshot (PNG, rendered off-screen).
+* **Toolbar** above every view: Reset view, **View ▾** (Front / Top /
+  Side / Iso), **Object ▾**, **Background ▾** and Screenshot (PNG,
+  rendered off-screen, guides included).
+* **Object ▾ → Colour & display…** — *original colours* (the file's vertex
+  colours, which follow the points through processing and onto the
+  reconstructed mesh; the theme colour when the file has none) or a custom
+  colour; style (surface, surface + mesh lines, wireframe, points),
+  opacity and point size. An error heatmap always takes precedence.
+* **Background ▾ → Colour & guides…** — theme / solid / gradient
+  background, and guides for reading the model: a floor grid (square size
+  shown), a ruler with tick labels in model units, start-pose axes and
+  outline, and a read-out of rotation / position relative to the pose the
+  model was loaded in.
+* Both windows have **Default**, Cancel, Apply and Save; settings are
+  saved (kept after a restart) and apply to all tabs. *Restore default*
+  in each menu resets at once.
 * Side panels are split into sections with tooltips on every parameter;
   rotation and **position** (X/Y/Z, model units) sliders act **live**
   (*Reset rotation* / *Reset position* set them back to 0).

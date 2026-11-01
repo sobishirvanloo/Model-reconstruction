@@ -227,6 +227,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "action_dark"):
             self.action_dark.setChecked(name == theme.DARK)
 
+    def apply_view_settings(self, kind, values):
+        """Object / background settings were saved: apply to every tab."""
+        for tab in self.tabs:
+            tab.viewport.apply_view_settings(kind, values)
+        self.show_message(
+            ("Object" if kind == "object" else "Background")
+            + " settings saved", "success")
+
     def show_mouse_guide(self, visible):
         for tab in self.tabs:
             tab.viewport.mouse_guide.setVisible(visible)

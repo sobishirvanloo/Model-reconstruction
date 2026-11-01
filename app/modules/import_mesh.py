@@ -55,6 +55,7 @@ class Geometry(TabMixin):
         self.points = None
         self.normals = None
         self.triangles = None   # None for a point cloud
+        self.colors = None      # per-point RGB from the file, if any
         self.source_name = ""
         self.init_rotation_state()
 
@@ -140,11 +141,12 @@ class Geometry(TabMixin):
         if len(pcd.points) == 0:
             raise ValueError("File contains no points!")
         pcd = pcd.remove_duplicated_points()
+        colors = np.asarray(pcd.colors).copy() if pcd.has_colors() else None
         if pcd.has_normals():
             normals = normalize(np.asarray(pcd.normals))
         else:
             normals = np.asarray(estimate_oriented_normals(pcd).normals)
-        return np.asarray(pcd.points), normals, None
+        return np.asarray(pcd.points), normals, None, colors
 
     @staticmethod
     def _load_mesh(file_path):
@@ -162,6 +164,8 @@ class Geometry(TabMixin):
             np.asarray(mesh.vertices).copy(),
             normalize(np.asarray(mesh.vertex_normals)),
             np.asarray(mesh.triangles).copy(),
+            (np.asarray(mesh.vertex_colors).copy()
+             if mesh.has_vertex_colors() else None),
         )
 
     def import_geometry(self, file_path):
@@ -175,7 +179,7 @@ class Geometry(TabMixin):
         if result is None:
             # .pcd, or a .ply that stores a point cloud instead of a mesh
             result = self._load_point_cloud(file_path)
-        self.points, self.normals, self.triangles = result
+        self.points, self.normals, self.triangles, self.colors = result
         self.source_name = os.path.basename(file_path)
 
     def _data_buttons(self):
@@ -194,7 +198,8 @@ class Geometry(TabMixin):
             (self.points, self.triangles) if self.triangles is not None else None
         )
         data = PointCloudData(
-            self.points, self.normals, self.source_name, reference
+            self.points, self.normals, self.source_name, reference,
+            colors=self.colors,
         )
         return data.transformed(self.actor_matrix())
 
@@ -212,7 +217,8 @@ class Geometry(TabMixin):
     # =========================
     def render_geometry(self):
         """Render geometry and return the actor."""
-        polydata = polydata_from_numpy(self.points, self.normals, self.triangles)
+        polydata = polydata_from_numpy(
+            self.points, self.normals, self.triangles, self.colors)
 
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(polydata)
@@ -286,6 +292,7 @@ class Geometry(TabMixin):
         self.points = None
         self.normals = None
         self.triangles = None
+        self.colors = None
         self.source_name = ""
         for widget in self._data_buttons():
             widget.setEnabled(False)

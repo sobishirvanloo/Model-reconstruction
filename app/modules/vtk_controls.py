@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -43,7 +44,16 @@ from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 from modules import settings
 from modules.geometry_utils import vtk_matrix_to_numpy
 from modules.point_data import add_section, insert_widget, move_widget_after
+from modules import view_settings
 from modules.theme import LIGHT, PALETTES, view_colors
+from modules.view_settings import (
+    BACKGROUND,
+    OBJECT,
+    BackgroundSettingsDialog,
+    ObjectSettingsDialog,
+    SceneOverlays,
+    rgb,
+)
 
 
 def orientation_matrix(orientation):
@@ -305,6 +315,10 @@ class VTKViewport:
         self.hint.SetPosition(0.5, 0.5)
         owner.renderer.AddViewProp(self.hint)
 
+        self.object_settings = view_settings.load(OBJECT)
+        self.background_settings = view_settings.load(BACKGROUND)
+        self.overlays = SceneOverlays(owner.renderer)
+
         self.apply_theme(LIGHT)
 
     # =========================
@@ -318,11 +332,31 @@ class VTKViewport:
         reset.setToolTip("Fit the model in the view (Ctrl+0)")
         reset.triggered.connect(self.reset_camera)
         toolbar.addSeparator()
-        for name, (direction, up) in CAMERA_VIEWS.items():
-            action = toolbar.addAction(name)
-            action.setToolTip(f"Look at the model from the {name.lower()}")
+
+        view_menu = self._dropdown(toolbar, "View", "Look at the model from "
+                                   "the front, top, side or at an angle")
+        for number, (name, (direction, up)) in enumerate(CAMERA_VIEWS.items(), 1):
+            action = view_menu.addAction(f"{name}\tCtrl+{number}")
             action.triggered.connect(
                 lambda _=False, d=direction, u=up: self.set_view(d, u))
+
+        object_menu = self._dropdown(toolbar, "Object",
+                                     "Colour and display style of the model")
+        object_menu.addAction("Colour && display…").triggered.connect(
+            lambda: self.open_settings(OBJECT))
+        object_menu.addSeparator()
+        object_menu.addAction("Restore default").triggered.connect(
+            lambda: self.restore_default(OBJECT))
+
+        background_menu = self._dropdown(
+            toolbar, "Background",
+            "Background colour, grid, ruler and start-pose guides")
+        background_menu.addAction("Colour && guides…").triggered.connect(
+            lambda: self.open_settings(BACKGROUND))
+        background_menu.addSeparator()
+        background_menu.addAction("Restore default").triggered.connect(
+            lambda: self.restore_default(BACKGROUND))
+
         toolbar.addSeparator()
         shot = toolbar.addAction(
             style.standardIcon(QStyle.SP_DialogSaveButton), "Screenshot")
@@ -330,24 +364,165 @@ class VTKViewport:
         shot.triggered.connect(self.save_screenshot)
         return toolbar
 
+    @staticmethod
+    def _dropdown(toolbar, text, tooltip):
+        """Toolbar button that opens a menu (returned)."""
+        button = QToolButton(toolbar)
+        button.setText(text)
+        button.setToolTip(tooltip)
+        button.setPopupMode(QToolButton.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        menu = QMenu(button)
+        button.setMenu(menu)
+        toolbar.addWidget(button)
+        return menu
+
     def render(self):
         self.owner.vtk_widget.GetRenderWindow().Render()
 
+    def fit_camera(self):
+        """Frame the model only (the guides, e.g. the large floor grid,
+        do not count)."""
+        renderer = self.owner.renderer
+        actor = getattr(self.owner, "actor", None)
+        if actor is not None:
+            renderer.ResetCamera(actor.GetBounds())
+        else:
+            renderer.ResetCamera()
+        renderer.ResetCameraClippingRange()
+
     def reset_camera(self):
-        self.owner.renderer.ResetCamera()
+        self.fit_camera()
         self.render()
 
     def set_view(self, direction, up):
         renderer = self.owner.renderer
-        renderer.ResetCamera()
+        self.fit_camera()
         camera = renderer.GetActiveCamera()
         focal = np.array(camera.GetFocalPoint())
         direction = np.asarray(direction, dtype=float)
         direction /= np.linalg.norm(direction)
         camera.SetPosition(*(focal + direction * camera.GetDistance()))
         camera.SetViewUp(*up)
-        renderer.ResetCamera()
+        self.fit_camera()
         self.render()
+
+    # =========================
+    # Object / background settings
+    # =========================
+    def _dialog(self, kind):
+        """The settings window of ``kind``, shared by all tabs."""
+        main = self.owner.main_window
+        dialogs = main.__dict__.setdefault("_view_dialogs", {})
+        if kind not in dialogs:
+            cls = ObjectSettingsDialog if kind == OBJECT else BackgroundSettingsDialog
+            dialogs[kind] = cls(main)
+            dialogs[kind].saved.connect(self._broadcast)
+        return dialogs[kind]
+
+    def open_settings(self, kind):
+        current = self.object_settings if kind == OBJECT else self.background_settings
+        self._dialog(kind).open_with(dict(current))
+
+    def restore_default(self, kind):
+        values = dict(view_settings.DEFAULTS[kind])
+        view_settings.save(kind, values)
+        self._broadcast(kind, values)
+
+    def _broadcast(self, kind, values):
+        """New settings apply to every tab (main window), else to this one."""
+        apply_all = getattr(self.owner.main_window, "apply_view_settings", None)
+        if apply_all:
+            apply_all(kind, values)
+        else:
+            self.apply_view_settings(kind, values)
+
+    def apply_view_settings(self, kind, values):
+        if kind == OBJECT:
+            self.object_settings = dict(values)
+            actor = getattr(self.owner, "actor", None)
+            if actor is not None:
+                self.style_actor(actor, self.owner.actor_kind)
+        else:
+            self.background_settings = dict(values)
+            self.apply_background()
+            self.update_overlays()
+        self.render()
+
+    def style_actor(self, actor, kind):
+        """Colour / style of the model from the object settings.
+
+        *Original* keeps the file's colours (a ``Colors`` array) or uses
+        the theme colour; an error heatmap is never overridden.
+        """
+        options = self.object_settings
+        mapper = actor.GetMapper()
+        polydata = mapper.GetInput() if mapper is not None else None
+        scalars = (polydata.GetPointData().GetScalars()
+                   if polydata is not None else None)
+        name = scalars.GetName() if scalars is not None else None
+        prop = actor.GetProperty()
+        if name == "Error":
+            pass                                  # heatmap stays
+        elif options["color_mode"] == "original" and name == "Colors":
+            mapper.SetColorModeToDirectScalars()
+            mapper.ScalarVisibilityOn()
+        else:
+            if mapper is not None:
+                mapper.ScalarVisibilityOff()
+            if options["color_mode"] == "custom":
+                prop.SetColor(*rgb(options["color"]))
+            elif kind:
+                prop.SetColor(*self.color(kind))
+
+        style = options["style"]
+        prop.SetEdgeVisibility(style == "surface_edges")
+        prop.SetEdgeColor(*rgb(options["edge_color"]))
+        if style == "wireframe":
+            prop.SetRepresentationToWireframe()
+        elif style == "points":
+            prop.SetRepresentationToPoints()
+        else:
+            prop.SetRepresentationToSurface()
+        prop.SetOpacity(options["opacity"] / 100.0)
+        prop.SetPointSize(options["point_size"])
+
+    def apply_background(self):
+        options = self.background_settings
+        renderer = self.owner.renderer
+        mode = options["mode"]
+        if mode == "solid":
+            renderer.GradientBackgroundOff()
+            renderer.SetBackground(*rgb(options["color"]))
+        elif mode == "gradient":
+            renderer.GradientBackgroundOn()
+            renderer.SetBackground(*rgb(options["color_bottom"]))
+            renderer.SetBackground2(*rgb(options["color_top"]))
+        else:
+            colors = view_colors(self.theme)
+            renderer.GradientBackgroundOn()
+            renderer.SetBackground(*colors["background_bottom"])
+            renderer.SetBackground2(*colors["background_top"])
+
+    def guide_color(self):
+        """Readable colour for guides on the current background."""
+        if self.background_settings["mode"] == "theme":
+            return view_colors(self.theme)["text"]
+        options = self.background_settings
+        background = (options["color"] if options["mode"] == "solid"
+                      else options["color_bottom"])
+        dark = QColor(background).lightness() < 128
+        return (0.85, 0.88, 0.92) if dark else (0.22, 0.26, 0.32)
+
+    def update_overlays(self, overlays=None):
+        owner = self.owner
+        rotation = (getattr(owner, "rotation_x", 0.0),
+                    getattr(owner, "rotation_y", 0.0),
+                    getattr(owner, "rotation_z", 0.0))
+        (overlays or self.overlays).update(
+            self.background_settings, getattr(owner, "start_bounds", None),
+            getattr(owner, "actor", None), rotation,
+            getattr(owner, "position", (0.0, 0.0, 0.0)), self.guide_color())
 
     def save_screenshot(self, path=None):
         """Save the current view as PNG (asks for a path when not given)."""
@@ -388,7 +563,8 @@ class VTKViewport:
         props.InitTraversal()
         for _ in range(props.GetNumberOfItems()):
             prop = props.GetNextProp()
-            if not prop.GetVisibility() or prop is self.hint:
+            if (not prop.GetVisibility() or prop is self.hint
+                    or self.overlays.owns(prop)):
                 continue
             if isinstance(prop, vtk.vtkActor):
                 renderer.AddActor(self._copy_actor(prop))
@@ -400,6 +576,8 @@ class VTKViewport:
         camera = vtk.vtkCamera()
         camera.DeepCopy(source.GetActiveCamera())
         renderer.SetActiveCamera(camera)
+        # Guides are rebuilt for the copy (cube axes / text need their own)
+        self.update_overlays(SceneOverlays(renderer))
         renderer.ResetCameraClippingRange()
         window.Render()
 
@@ -422,6 +600,7 @@ class VTKViewport:
         mapper.SetInputData(source_mapper.GetInput())
         mapper.SetScalarVisibility(source_mapper.GetScalarVisibility())
         mapper.SetScalarMode(source_mapper.GetScalarMode())
+        mapper.SetColorMode(source_mapper.GetColorMode())
         mapper.SetLookupTable(source_mapper.GetLookupTable())
         mapper.SetScalarRange(source_mapper.GetScalarRange())
         copy = vtk.vtkActor()
@@ -447,9 +626,7 @@ class VTKViewport:
         self.theme = name
         self.mouse_guide.apply_theme(name)
         colors = view_colors(name)
-        renderer = self.owner.renderer
-        renderer.SetBackground(*colors["background_bottom"])
-        renderer.SetBackground2(*colors["background_top"])
+        self.apply_background()
         self.hint.GetTextProperty().SetColor(*colors["text"])
         axes = self.owner.marker.GetOrientationMarker()
         for caption in (axes.GetXAxisCaptionActor2D(),
@@ -458,9 +635,9 @@ class VTKViewport:
             caption.GetCaptionTextProperty().SetColor(*colors["text"])
             caption.GetCaptionTextProperty().ShadowOff()
         actor = getattr(self.owner, "actor", None)
-        kind = getattr(self.owner, "actor_kind", None)
-        if actor is not None and kind:
-            actor.GetProperty().SetColor(*colors[kind])
+        if actor is not None:
+            self.style_actor(actor, getattr(self.owner, "actor_kind", None))
+        self.update_overlays()
         self.render()
 
     @staticmethod
@@ -519,6 +696,7 @@ class RotationMixin:
         self.rotation_z = 0.0
         self.position = [0.0, 0.0, 0.0]
         self.position_range = 1.0
+        self.start_bounds = None      # model box at rotation 0 / position 0
 
     def setup_rotation_controls(self):
         """Wire the X/Y/Z slider <-> spinbox pairs together."""
@@ -620,6 +798,7 @@ class RotationMixin:
         if self.actor is not None:
             self.actor.SetPosition(*self.position)
             self.renderer.ResetCameraClippingRange()
+            self._pose_changed()
             self.vtk_widget.GetRenderWindow().Render()
             self.console.appendPlainText("↺ Position reset to 0, 0, 0")
 
@@ -630,6 +809,7 @@ class RotationMixin:
         if self.actor is not None:
             self.actor.SetPosition(*self.position)
             self.renderer.ResetCameraClippingRange()
+            self._pose_changed()
             self.vtk_widget.GetRenderWindow().Render()
 
     def on_actor_moved(self):
@@ -641,7 +821,7 @@ class RotationMixin:
         self.position = [float(v) for v in self.actor.GetPosition()]
         for axis, value in zip("XYZ", self.position):
             self._show_position(axis, value)
-        self._sync_axes()
+        self._pose_changed()
 
     def reset_rotation_view(self):
         self.reset_rotation()
@@ -657,6 +837,11 @@ class RotationMixin:
             f"✅ Rotation applied | X: {self.rotation_x:.1f}° | "
             f"Y: {self.rotation_y:.1f}° | Z: {self.rotation_z:.1f}°"
         )
+
+    def _pose_changed(self):
+        """Rotation / position changed: corner axes and guides follow."""
+        self._sync_axes()
+        self.viewport.update_overlays()
 
     def _sync_axes(self):
         """Give the corner axes the model's rotation, so they show the
@@ -677,21 +862,23 @@ class RotationMixin:
         self.actor.SetOrientation(
             self.rotation_x, self.rotation_y, self.rotation_z
         )
-        self._sync_axes()
+        self._pose_changed()
         self.vtk_widget.GetRenderWindow().Render()
         return True
 
     def show_actor(self, actor, reset_camera=True, kind=None):
-        """Replace the displayed actor, keeping the current rotation.
+        """Replace the displayed actor, keeping the current rotation and
+        position.
 
-        ``kind`` ("mesh" / "points") gives the actor the theme colour.
+        ``kind`` ("mesh" / "points") selects the theme colour used when
+        the object settings do not ask for another one.
         """
         if self.actor is not None:
             self.renderer.RemoveActor(self.actor)
 
-        if kind:
-            actor.GetProperty().SetColor(*self.viewport.color(kind))
         self.actor_kind = kind
+        self.viewport.style_actor(actor, kind)
+        self.start_bounds = actor.GetMapper().GetBounds()
 
         bounds = actor.GetBounds()
         actor.SetOrigin(
@@ -707,10 +894,10 @@ class RotationMixin:
 
         self.actor = actor
         self.renderer.AddActor(actor)
-        self._sync_axes()
+        self._pose_changed()
         self.viewport.set_empty(False)
         if reset_camera:
-            self.renderer.ResetCamera()
+            self.viewport.fit_camera()
         else:
             self.renderer.ResetCameraClippingRange()
         self.vtk_widget.GetRenderWindow().Render()
@@ -847,8 +1034,9 @@ class TabMixin(RotationMixin):
             self.renderer.RemoveActor(self.actor)
         self.actor = None
         self.actor_kind = None
+        self.start_bounds = None
         self.reset_transform()
-        self._sync_axes()
+        self._pose_changed()
         for widget in self.rotation_widgets():
             widget.setEnabled(False)
         self.file_label.setText("No data loaded")

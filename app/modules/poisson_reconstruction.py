@@ -51,6 +51,7 @@ from modules.geometry_utils import (
     normalize,
     orient_consistently,
     polydata_from_numpy,
+    transfer_colors,
 )
 from modules.point_data import (
     add_button_after,
@@ -472,9 +473,11 @@ class PoissonReconstruction(TabMixin):
         # ---------- State ----------
         self.points = None
         self.normals = None
+        self.colors = None            # RGB of the input points, if any
         self.source_name = ""
         self.mesh_o3d = None
         self._mesh_arrays = None      # (vertices, normals, triangles) shown
+        self._mesh_colors = None      # vertex colours taken from the points
         self._last_build = None       # params / depth / timings of the mesh
         self._worker = None
         self._pending_run = False
@@ -725,9 +728,11 @@ class PoissonReconstruction(TabMixin):
             self.cancel_sweep()       # its results belong to the old data
         self.points = data.points.copy()
         self.normals = data.normals.copy()
+        self.colors = None if data.colors is None else data.colors.copy()
         self.data_note = data.note
         self.mesh_o3d = None
         self._mesh_arrays = None
+        self._mesh_colors = None
         self._data_generation += 1
         self._reset_camera_next = True
 
@@ -789,10 +794,12 @@ class PoissonReconstruction(TabMixin):
         self._data_generation += 1    # ignore results of a running job
         self.points = None
         self.normals = None
+        self.colors = None
         self.source_name = ""
         self.data_note = ""
         self.mesh_o3d = None
         self._mesh_arrays = None
+        self._mesh_colors = None
         self._last_build = None
         self.reference = None
         self.reference_name = ""
@@ -856,6 +863,7 @@ class PoissonReconstruction(TabMixin):
         params = self._current_params()
         points = self.points.copy()
         normals = self.normals.copy()
+        colors = self.colors
         reference = self.reference
         run_evaluation = self.evaluate_enabled
         tags = {
@@ -867,6 +875,11 @@ class PoissonReconstruction(TabMixin):
 
         def job(progress):
             result = build_mesh(params, points, normals, reference, run_evaluation)
+            # Each vertex takes the colour of the nearest input point
+            result["colors"] = transfer_colors(points, colors, result["vertices"])
+            if result["colors"] is not None:
+                result["mesh"].vertex_colors = o3d.utility.Vector3dVector(
+                    result["colors"])
             result.update(tags)
             return result
 
@@ -924,6 +937,7 @@ class PoissonReconstruction(TabMixin):
             self._mesh_arrays = (
                 result["vertices"], result["normals"], result["triangles"]
             )
+            self._mesh_colors = result.get("colors")
             self._last_build = {
                 "params": result["params"],
                 "algorithm": result["algorithm"],
@@ -1204,7 +1218,8 @@ class PoissonReconstruction(TabMixin):
     def _render_mesh(self):
         try:
             vertices, normals, triangles = self._mesh_arrays
-            polydata = polydata_from_numpy(vertices, normals, triangles)
+            polydata = polydata_from_numpy(
+                vertices, normals, triangles, self._mesh_colors)
 
             mapper = vtk.vtkPolyDataMapper()
             mapper.SetInputData(polydata)
