@@ -10,12 +10,17 @@ module (import_mesh / point_processing / poisson_reconstruction):
 * ``TabMixin``           — rotation + messages / status-bar helpers.
 """
 
+import ctypes
+import gc
+import sys
+
 import numpy as np
 import vtk
 from PyQt5.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QStyle,
     QToolBar,
     QVBoxLayout,
@@ -24,7 +29,7 @@ from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 from modules import settings
 from modules.geometry_utils import vtk_matrix_to_numpy
-from modules.point_data import move_widget_after
+from modules.point_data import insert_widget, move_widget_after
 from modules.theme import LIGHT, view_colors
 
 
@@ -449,8 +454,24 @@ class RotationMixin:
             widget.blockSignals(False)
 
 
+def release_memory():
+    """Collect garbage and hand freed heap pages back to the OS, so the
+    RAM used by removed data shows up as free again."""
+    gc.collect()
+    if sys.platform.startswith("linux"):
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass
+
+
 class TabMixin(RotationMixin):
-    """Rotation plus the helpers every tab uses to talk to the user."""
+    """Rotation plus the helpers every tab uses to talk to the user.
+
+    Tabs that hold data implement ``has_data()`` and ``clear_data()``; the
+    *Remove data* button (``add_remove_button``) asks, calls
+    ``clear_data`` and frees the memory.
+    """
 
     def notify(self, text, level="info", dialog=False):
         """Log ``text`` to the console and the status bar; serious errors
@@ -478,3 +499,54 @@ class TabMixin(RotationMixin):
         if variant:
             button.setProperty("variant", variant)
         return button
+
+    # =========================
+    # Remove data (free memory)
+    # =========================
+    def add_remove_button(self, anchor):
+        """*Remove data* button right below ``anchor`` (disabled while the
+        tab is empty)."""
+        self.btn_remove = QPushButton("Remove data", anchor.parentWidget())
+        self.decorate(self.btn_remove, QStyle.SP_TrashIcon,
+                      "Remove the data of this tab and free its memory "
+                      "(Ctrl+W)", "danger")
+        self.btn_remove.clicked.connect(lambda: self.remove_data())
+        self.btn_remove.setEnabled(False)
+        insert_widget(anchor, self.btn_remove, after=True)
+        return self.btn_remove
+
+    def remove_data(self, confirm=True):
+        """Drop this tab's data (asks first) and free the memory."""
+        if not self.has_data():
+            return False
+        if confirm:
+            answer = QMessageBox.question(
+                self.main_window, "Remove data",
+                f"Remove {self.source_name or 'the data'} from this tab?\n\n"
+                "Unsaved results are lost; the file on disk is not touched.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return False
+        name = self.source_name
+        self.clear_data()
+        release_memory()
+        self.notify(f"🗑 Removed {name or 'data'} - memory freed", "success")
+        return True
+
+    def clear_view(self):
+        """Remove the displayed actor and show the empty-state hint."""
+        if self.actor is not None:
+            self.renderer.RemoveActor(self.actor)
+        self.actor = None
+        self.actor_kind = None
+        self.reset_rotation()
+        for widget in self.rotation_widgets():
+            widget.setEnabled(False)
+        self.file_label.setText("No data loaded")
+        self.file_label.setProperty("role", "hint")
+        self.file_label.style().polish(self.file_label)
+        self.btn_remove.setEnabled(False)
+        self.set_tab_info(file=None, points=None, triangles=None)
+        self.console.clear()
+        self.viewport.set_empty(True)
+        self.viewport.render()

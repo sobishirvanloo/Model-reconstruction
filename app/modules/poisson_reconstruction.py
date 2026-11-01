@@ -175,6 +175,12 @@ def cached_preprocess(points, normals, enabled, voxel_size):
     return pre_points, pre_normals, False
 
 
+def clear_caches():
+    """Forget the cached preprocessing results and tetrahedralisation."""
+    _preprocess_cache.clear()
+    _tetra_cache.clear()
+
+
 def depth_for_width(points, width, scale):
     """Octree depth whose finest cell is ~``width`` (PoissonRecon's rule).
 
@@ -466,6 +472,7 @@ class PoissonReconstruction(TabMixin):
         # ---------- State ----------
         self.points = None
         self.normals = None
+        self.source_name = ""
         self.mesh_o3d = None
         self._mesh_arrays = None      # (vertices, normals, triangles) shown
         self._last_build = None       # params / depth / timings of the mesh
@@ -587,6 +594,7 @@ class PoissonReconstruction(TabMixin):
         self.file_label.setProperty("role", "hint")
         self.file_label.setWordWrap(True)
         insert_widget(self.btn_import, self.file_label, after=True)
+        self.add_remove_button(self.file_label)
 
         self.btn_export.setText("Export mesh…")
         self.decorate(self.btn_export, QStyle.SP_DialogSaveButton,
@@ -756,11 +764,53 @@ class PoissonReconstruction(TabMixin):
 
         self._set_controls_enabled(True)
         self.btn_export.setEnabled(False)
+        self.btn_remove.setEnabled(True)
         self.reset_rotation()
 
         # Start the reconstruction in the background right away
         self._live_timer.stop()
         self._restart_reconstruction()
+
+    # =========================
+    # Remove data
+    # =========================
+    def has_data(self):
+        return self.points is not None
+
+    def clear_data(self):
+        """Drop the points, mesh, reference and caches.  A job still
+        running finishes in the background and its result is ignored;
+        the run history (small) is kept for comparison."""
+        if self._sweep is not None:
+            self.cancel_sweep()
+        self._live_timer.stop()
+        self._pending_run = False
+        self._pending_eval = False
+        self._data_generation += 1    # ignore results of a running job
+        self.points = None
+        self.normals = None
+        self.source_name = ""
+        self.data_note = ""
+        self.mesh_o3d = None
+        self._mesh_arrays = None
+        self._last_build = None
+        self.reference = None
+        self.reference_name = ""
+        self._reference_version += 1
+        self.vertex_errors = None
+        self.last_record = None
+        clear_caches()
+        if self._scalar_bar is not None:
+            self._scalar_bar.VisibilityOff()
+        self._update_reference_label()
+        self.report.show_record(None)
+        self.report.set_status("No data loaded.")
+        self.btn_export.setEnabled(False)
+        self.clear_view()
+        self.console.appendPlainText(
+            "Ready. Open a point cloud with normals (.ply / .pcd / .txt / .csv"
+            " / .npy) or send one from another tab."
+        )
 
     # =========================
     # Live Reconstruction (background thread, debounced)

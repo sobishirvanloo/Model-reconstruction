@@ -6,6 +6,7 @@ turned into an application-wide Qt style sheet + QPalette.  Widgets carry
 
     QPushButton[variant="primary"]   main action of a panel (filled)
     QPushButton[variant="link"]      secondary, text-only action
+    QPushButton[variant="danger"]    destructive action (red outline)
     QLabel[role="section"]           section header in a side panel
     QLabel[role="hint"]              small explanatory text
     QFrame[role="panel"]             side panel background
@@ -171,6 +172,9 @@ QPushButton[variant="link"] {{
     background: transparent; border: none; color: {p['primary']};
     font-weight: normal; padding: 2px 4px; text-decoration: underline; }}
 QPushButton[variant="link"]:disabled {{ color: {p['text_disabled']}; }}
+QPushButton[variant="danger"] {{ color: {p['error']}; border-color: {p['error']}; }}
+QPushButton[variant="danger"]:hover {{ background-color: {p['error']}; color: {p['on_primary']}; }}
+QPushButton[variant="danger"]:disabled {{ color: {p['text_disabled']}; border-color: {p['border']}; }}
 
 /* ---------- inputs ---------- */
 QSpinBox, QDoubleSpinBox, QLineEdit, QComboBox {{

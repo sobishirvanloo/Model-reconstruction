@@ -106,6 +106,7 @@ class Geometry(TabMixin):
         self.btn_sample.setProperty("variant", "link")
         self.btn_sample.clicked.connect(self.open_sample)
         insert_widget(self.file_label, self.btn_sample, after=True)
+        self.add_remove_button(self.btn_sample)
 
         self.btn_export.setText("Export points…")
         self.decorate(self.btn_export, QStyle.SP_DialogSaveButton,
@@ -262,6 +263,7 @@ class Geometry(TabMixin):
 
         for widget in self.rotation_widgets() + self._data_buttons():
             widget.setEnabled(True)
+        self.btn_remove.setEnabled(True)
 
         self.reset_rotation()
         self.render_geometry()
@@ -269,6 +271,24 @@ class Geometry(TabMixin):
             file=self.source_name, points=len(self.points),
             triangles=None if self.triangles is None else len(self.triangles))
         self.notify(f"Opened {self.source_name}", "success")
+
+    # =========================
+    # Remove data
+    # =========================
+    def has_data(self):
+        return self.points is not None
+
+    def clear_data(self):
+        self.points = None
+        self.normals = None
+        self.triangles = None
+        self.source_name = ""
+        for widget in self._data_buttons():
+            widget.setEnabled(False)
+        self.clear_view()
+        self.console.appendPlainText(
+            "Ready. Open a mesh or point cloud (*.ply, *.obj, *.stl, *.pcd)."
+        )
 
     # =========================
     # Export Data (UI)

@@ -19,7 +19,7 @@ from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
 from modules.splash_screen import create_splash_and_show
-from modules.vtk_controls import CAMERA_VIEWS
+from modules.vtk_controls import CAMERA_VIEWS, release_memory
 
 TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct")
 MESH_ONLY = (".stl", ".obj", ".off", ".gltf", ".glb")
@@ -32,6 +32,8 @@ SHORTCUTS = (
     ("Ctrl+Shift+O", "Open the sample Stanford bunny"),
     ("Ctrl+S", "Export from the current tab"),
     ("Ctrl+Shift+S", "Save a screenshot of the 3D view"),
+    ("Ctrl+W", "Remove the current tab's data (frees memory)"),
+    ("Ctrl+Shift+W", "Remove the data from all tabs"),
     ("Ctrl+0", "Reset the view"),
     ("Ctrl+1 … Ctrl+4", "Front / Top / Side / Iso view"),
     ("Ctrl+R", "Quality report"),
@@ -261,6 +263,14 @@ class MainWindow(QMainWindow):
                      lambda: self.current_tab().viewport.save_screenshot(),
                      "Ctrl+Shift+S")
         file_menu.addSeparator()
+        self._action(file_menu, "Re&move Data from This Tab",
+                     lambda: self.current_tab().remove_data(), "Ctrl+W",
+                     QStyle.SP_TrashIcon,
+                     "Remove the current tab's data and free its memory")
+        self._action(file_menu, "Remove Data from &All Tabs",
+                     self.remove_all_data, "Ctrl+Shift+W",
+                     tip="Empty every tab and free the memory")
+        file_menu.addSeparator()
         self._action(file_menu, "&Quit", self.close, "Ctrl+Q")
 
         view_menu = bar.addMenu("&View")
@@ -285,6 +295,25 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Help")
         self._action(help_menu, "&Keyboard Shortcuts", self.show_shortcuts, "F1")
         self._action(help_menu, "&About", self.show_about)
+
+    def remove_all_data(self):
+        """Empty every tab (one confirmation) and free the memory."""
+        loaded = [tab for tab in self.tabs if tab.has_data()]
+        if not loaded:
+            self.show_message("Nothing to remove - all tabs are empty")
+            return
+        answer = QMessageBox.question(
+            self, "Remove data",
+            "Remove the data from all tabs?\n\n"
+            "Unsaved results are lost; files on disk are not touched.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        for tab in loaded:
+            tab.clear_data()
+        release_memory()
+        self.show_message(f"🗑 Removed data from {len(loaded)} tab(s) - "
+                          "memory freed", "success")
 
     def _fill_recent_menu(self):
         self.recent_menu.clear()

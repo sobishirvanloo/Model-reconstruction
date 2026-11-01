@@ -31,11 +31,16 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
   rotation sliders act **live** (*Reset rotation* sets them back to 0°).
 * Tabs read as steps (1 Import → 2 Process → 3 Reconstruct) and get a
   check mark once they hold data.
+* **🗑 Remove data** in every tab (or *File ▸ Remove Data*, Ctrl+W / for
+  all tabs Ctrl+Shift+W) empties the tab and frees the RAM it used — points,
+  mesh, reference, preprocessing / tetrahedralisation caches; the run
+  history is kept. Files on disk are never touched.
 
 | Shortcut | Action |
 |---|---|
 | Ctrl+O / Ctrl+Shift+O | Open file / open the sample bunny |
 | Ctrl+S / Ctrl+Shift+S | Export / save a screenshot |
+| Ctrl+W / Ctrl+Shift+W | Remove the data of this tab / of all tabs |
 | Ctrl+0, Ctrl+1…4 | Reset view, Front / Top / Side / Iso |
 | Ctrl+R | Quality report |
 | Ctrl+T | Light / dark theme |

@@ -126,6 +126,7 @@ class Processing(TabMixin):
         self.file_label.setProperty("role", "hint")
         self.file_label.setWordWrap(True)
         insert_widget(self.btn_import, self.file_label, after=True)
+        self.add_remove_button(self.file_label)
 
         mw.label.setText("Voxel size (0 = original density)")
         self.Point_density_spinbox.setToolTip(
@@ -293,6 +294,7 @@ class Processing(TabMixin):
         )
 
         self._set_controls_enabled(True)
+        self.btn_remove.setEnabled(True)
 
         # Reset density without triggering a recompute
         self._voxel_timer.stop()
@@ -321,6 +323,28 @@ class Processing(TabMixin):
             return
         self.load_data(data, f"✅ Opened {data.source}")
         self.notify(f"Opened {data.source}", "success")
+
+    # =========================
+    # Remove data
+    # =========================
+    def has_data(self):
+        return self.points is not None
+
+    def clear_data(self):
+        self._voxel_timer.stop()
+        self.points = None
+        self.normals = None
+        self.points_changed = None
+        self.normals_changed = None
+        self.shuffled = False
+        self.source_name = ""
+        self.reference = None
+        self._set_controls_enabled(False)
+        self.clear_view()
+        self.console.appendPlainText(
+            "Ready. Open a point cloud (*.ply, *.pcd, *.txt, *.csv, *.npy) "
+            "or send one from the Import mesh tab."
+        )
 
     # =========================
     # Current data (as displayed)
