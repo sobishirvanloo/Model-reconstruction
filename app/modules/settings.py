@@ -65,3 +65,22 @@ def view_settings(kind):
 
 def set_view_settings(kind, values):
     _store().setValue(f"view/{kind}", json.dumps(values))
+
+
+def layout_state(key):
+    """Saved splitter states of a tab: {"panel": bytes, "console": bytes}."""
+    state = {}
+    for name in ("panel", "console"):
+        value = _store().value(f"layout/{key}/{name}")
+        if value:
+            state[name] = value
+    return state
+
+
+def set_layout_state(key, state):
+    for name, value in state.items():
+        _store().setValue(f"layout/{key}/{name}", value)
+
+
+def clear_layout_state():
+    _store().remove("layout")

@@ -19,6 +19,7 @@ from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
 from modules.splash_screen import create_splash_and_show
+from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
 
 TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct")
@@ -68,6 +69,12 @@ class MainWindow(QMainWindow):
         self.poisson = PoissonReconstruction(self)
         self.tabs = (self.geometry, self.processing, self.poisson)
         self.pages = (self.tab, self.tab_2, self.tab_5)
+        # Drag the dividers to resize view / panel / console
+        self.splitters = [
+            make_resizable(key, tab.frame_view, tab.frame_console)
+            for key, tab in zip(("import", "processing", "reconstruction"),
+                                self.tabs)
+        ]
 
         for tab in self.tabs:
             panel = tab.btn_import.parentWidget()
@@ -236,6 +243,17 @@ class MainWindow(QMainWindow):
             ("Object" if kind == "object" else "Background")
             + " settings saved", "success")
 
+    def reset_layout(self):
+        for splitter in self.splitters:
+            splitter.reset()
+        settings.clear_layout_state()
+        self.show_message("Layout reset to the default sizes")
+
+    def closeEvent(self, event):
+        for splitter in self.splitters:
+            splitter.save_state()
+        super().closeEvent(event)
+
     def show_mouse_guide(self, visible):
         for tab in self.tabs:
             tab.viewport.mouse_guide.setVisible(visible)
@@ -304,6 +322,8 @@ class MainWindow(QMainWindow):
                      lambda: self.current_tab().checkpoint_forward(), "Alt+Right",
                      QStyle.SP_ArrowForward)
         view_menu.addSeparator()
+        self._action(view_menu, "Reset &Layout", self.reset_layout,
+                     tip="Default sizes of the 3D view, side panel and console")
         self.action_mouse_guide = self._action(
             view_menu, "&Mouse Guide", self.show_mouse_guide,
             tip="Show / hide the mouse help under the 3D views")

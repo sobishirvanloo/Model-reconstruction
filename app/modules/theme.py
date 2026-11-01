@@ -139,6 +139,24 @@ def _arrow_images(p):
         painter.end()
         image.save(path)
     paths["check"] = path.replace("\\", "/")
+
+    # Three-dot grips for the splitter dividers
+    for name, (width, height) in (("grip_v", (5, 24)), ("grip_h", (24, 5))):
+        path = os.path.join(folder, f"{name}_{p['border_strong'].lstrip('#')}.png")
+        if not os.path.exists(path):
+            image = QImage(width * 2, height * 2, QImage.Format_ARGB32)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(p["border_strong"]))
+            for k in (-1, 0, 1):
+                x = width + (k * 14 if width > height else 0)
+                y = height + (k * 14 if height > width else 0)
+                painter.drawEllipse(QPointF(x, y), 3.2, 3.2)
+            painter.end()
+            image.save(path)
+        paths[name] = path.replace("\\", "/")
     return paths
 
 
@@ -193,6 +211,13 @@ QPushButton[variant="link"]:disabled {{ color: {p['text_disabled']}; }}
 QPushButton[variant="danger"] {{ color: {p['error']}; border-color: {p['error']}; }}
 QPushButton[variant="danger"]:hover {{ background-color: {p['error']}; color: {p['on_primary']}; }}
 QPushButton[variant="danger"]:disabled {{ color: {p['text_disabled']}; border-color: {p['border']}; }}
+
+/* ---------- splitter dividers (drag to resize) ---------- */
+QSplitter::handle {{ background: transparent; }}
+QSplitter::handle:horizontal {{ image: url({arrows['grip_v']}); }}
+QSplitter::handle:vertical {{ image: url({arrows['grip_h']}); }}
+QSplitter::handle:hover {{ background-color: {p['selection']}; }}
+QSplitter::handle:pressed {{ background-color: {p['primary']}; }}
 
 /* ---------- mouse guide under the 3D views ---------- */
 QFrame#mouseGuide {{

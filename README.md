@@ -25,6 +25,11 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 * **Status bar**: current file, point / triangle counts, a progress bar while
   reconstructing or sweeping, and coloured success / error messages
   (serious errors also open a dialog).
+* **Resizable layout** — drag the dividers (three dots) between the 3D
+  view, the side panel and the console; the others adjust, the panel
+  contents stretch, and a larger window gives its extra space to the 3D
+  view. Double-click a divider for its default size, *View ▸ Reset
+  Layout* for all; sizes are remembered per tab.
 * **Toolbar** above every view: **Reset view** (rotation and position
   back to 0 and the model framed), **◀ 3 / 10 ▶** checkpoints, **View ▾**
   (Front / Top / Side / Iso), **Object ▾**, **Background ▾** and
