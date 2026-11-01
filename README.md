@@ -35,9 +35,10 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
   opacity and point size. An error heatmap always takes precedence.
 * **Background ▾ → Colour & guides…** — theme / solid / gradient
   background, and guides for reading the model: a floor grid (square size
-  shown), a ruler with tick labels in model units, start-pose axes and
-  outline, and a read-out of rotation / position relative to the pose the
-  model was loaded in.
+  shown), a ruler with tick labels in model units, the **object axes and
+  box** (they turn and move with the model, in step with the rotation /
+  position values and the corner axes), and a read-out of rotation /
+  position relative to the pose the model was loaded in.
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.

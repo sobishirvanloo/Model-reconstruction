@@ -4,7 +4,8 @@
                                 one), display style, opacity, point size
 * ``BackgroundSettingsDialog``  background colour (theme / solid /
                                 gradient) and visual guides: floor grid,
-                                ruler, start-pose axes and outline, a
+                                ruler, object axes and box (they move
+                                and turn with the model), a
                                 rotation / position read-out
 * ``SceneOverlays``             draws those guides in a renderer
 
@@ -57,8 +58,8 @@ DEFAULTS = {
         "color_bottom": "#c9d3de",
         "grid": False,
         "ruler": False,
-        "start_axes": False,
-        "start_outline": False,
+        "object_axes": False,
+        "object_outline": False,
         "readout": False,
     },
 }
@@ -74,7 +75,9 @@ STYLES = {
 def load(kind):
     """Saved settings of ``kind`` merged over the defaults."""
     values = dict(DEFAULTS[kind])
-    values.update(settings.view_settings(kind))
+    saved = settings.view_settings(kind)
+    # only known keys: settings of older versions may hold renamed ones
+    values.update({key: saved[key] for key in values if key in saved})
     return values
 
 
@@ -245,11 +248,12 @@ class BackgroundSettingsDialog(_SettingsDialog):
          "square is shown in the read-out"),
         ("ruler", "Ruler (scale on the model's box)",
          "Axes with tick labels in model units around the model"),
-        ("start_axes", "Start-pose axes",
-         "X / Y / Z axes at the model's starting centre (position 0, 0, 0, "
-         "rotation 0°)"),
-        ("start_outline", "Start-pose outline",
-         "The box the model filled before it was rotated or moved"),
+        ("object_axes", "Object axes",
+         "The model's own X / Y / Z axes at its centre: they turn and move "
+         "with the model, in step with the rotation / position values and "
+         "the corner axes"),
+        ("object_outline", "Object box",
+         "The model's bounding box, turning and moving with the model"),
         ("readout", "Rotation / position read-out",
          "Angles and offsets relative to the starting pose, in a corner"),
     )
@@ -340,7 +344,7 @@ def format_length(value, digits=6):
 
 
 class SceneOverlays:
-    """Grid, ruler, start-pose axes / outline and the pose read-out of one
+    """Grid, ruler, object axes / box and the pose read-out of one
     renderer.  ``update`` is cheap; the grid is only rebuilt when the
     model's starting box or the colour changes."""
 
@@ -351,9 +355,10 @@ class SceneOverlays:
 
         self.grid = self._line_actor()
         self.outline = self._line_actor()
-        self.start_axes = vtk.vtkAxesActor()
-        self.start_axes.SetAxisLabels(0)
-        self.start_axes.SetShaftTypeToLine()
+        self.object_axes = vtk.vtkAxesActor()
+        self.object_axes.SetShaftTypeToCylinder()
+        self.object_axes.SetCylinderRadius(0.015)
+        self.object_axes.SetConeRadius(0.25)
         self.ruler = vtk.vtkCubeAxesActor()
         self.ruler.SetCamera(renderer.GetActiveCamera())
         self.ruler.SetFlyModeToOuterEdges()
@@ -374,7 +379,7 @@ class SceneOverlays:
         text.SetFontFamilyToCourier()
         text.ShadowOff()
 
-        for prop in (self.grid, self.outline, self.start_axes, self.ruler,
+        for prop in (self.grid, self.outline, self.object_axes, self.ruler,
                      self.readout):
             prop.SetPickable(False)
             prop.SetVisibility(False)
@@ -410,24 +415,40 @@ class SceneOverlays:
             self._update_grid(low, high, center, diagonal, step, color)
         self.grid.SetVisibility(bool(options["grid"]))
 
-        if options["start_outline"]:
+        # Box and axes are built in the model's own frame and get the
+        # model's matrix, so they turn and move together with it.
+        pose = vtk.vtkMatrix4x4()
+        pose.DeepCopy(actor.GetMatrix())
+
+        if options["object_outline"]:
             source = vtk.vtkOutlineSource()
             source.SetBounds(*bounds)
             source.Update()
             self.outline.GetMapper().SetInputData(source.GetOutput())
+            self.outline.SetUserMatrix(pose)
             prop = self.outline.GetProperty()
             prop.SetColor(*color)
-            prop.SetOpacity(0.7)
+            prop.SetOpacity(0.8)
             prop.SetLineWidth(1.5)
-        self.outline.SetVisibility(bool(options["start_outline"]))
+        self.outline.SetVisibility(bool(options["object_outline"]))
 
-        if options["start_axes"]:
-            length = diagonal * 0.4
-            self.start_axes.SetTotalLength(length, length, length)
+        if options["object_axes"]:
+            length = diagonal * 0.7           # long enough to leave the model
+            self.object_axes.SetTotalLength(length, length, length)
             transform = vtk.vtkTransform()
-            transform.Translate(*center)
-            self.start_axes.SetUserTransform(transform)
-        self.start_axes.SetVisibility(bool(options["start_axes"]))
+            transform.PostMultiply()
+            transform.Translate(*center)          # centre of the model ...
+            transform.Concatenate(pose)           # ... then its rotation / move
+            self.object_axes.SetUserTransform(transform)
+            for caption in (self.object_axes.GetXAxisCaptionActor2D(),
+                            self.object_axes.GetYAxisCaptionActor2D(),
+                            self.object_axes.GetZAxisCaptionActor2D()):
+                caption.GetTextActor().SetTextScaleModeToNone()
+                text = caption.GetCaptionTextProperty()
+                text.SetColor(*color)
+                text.SetFontSize(14)
+                text.ShadowOff()
+        self.object_axes.SetVisibility(bool(options["object_axes"]))
 
         if options["ruler"]:
             self.ruler.SetBounds(actor.GetBounds())
@@ -445,7 +466,7 @@ class SceneOverlays:
             lines = [
                 "Rotation  X {:7.1f}°  Y {:7.1f}°  Z {:7.1f}°".format(*rotation),
                 "Position  X {:>8}  Y {:>8}  Z {:>8}".format(
-                    *(format_length(v) for v in position)),
+                    *(format_length(v, 4) for v in position)),
                 "Size      {} × {} × {}".format(
                     *(format_length(v, 4) for v in high - low)),
             ]
