@@ -1,8 +1,13 @@
 # Model Reconstruction — dependencies
-# Python 3.11 recommended (the project was originally built against 3.11).
-# On Python >= 3.13 these packages may not have wheels yet.
+# Tested with Python 3.14 (numpy 2, VTK 9.7, Open3D 0.20, PyQt5 5.15).
+#
+# If your PyPI mirror fails on a Jupyter package (e.g. jupyterlab_widgets,
+# which Open3D only needs for notebooks), install Open3D without it:
+#   pip install "numpy>=2.0" PyQt5==5.15.10 "vtk>=9.4.1,<10"
+#   pip install --no-deps open3d==0.20.0
+#   pip install plotly dash scikit-learn pyyaml addict pillow pandas tqdm pyquaternion
 
-numpy==1.26.4
+numpy>=2.0
 PyQt5==5.15.10
-vtk==9.3.0
-open3d==0.18.0
+vtk>=9.4.1,<10
+open3d==0.20.0

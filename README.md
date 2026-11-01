@@ -131,15 +131,16 @@ or mouse) is applied to exported and sent points, normals and meshes.
 
 ## Requirements
 
-* Python **3.11** recommended (the project was built with 3.11; newer Python
-  versions may lack wheels for the C-extension dependencies).
-* See [`requirements.txt`](requirements.txt).
+* Python **3.14** (tested with numpy 2, VTK 9.7, Open3D 0.20, PyQt5 5.15).
+* See [`requirements.txt`](requirements.txt). If your PyPI mirror fails on a
+  Jupyter package while installing Open3D, use the three commands at the top
+  of that file instead (Open3D does not need Jupyter for this app).
 
 ## Setup
 
 ```bash
 # 1) Create and activate a virtual environment
-python3.11 -m venv myenv
+python3.14 -m venv myenv
 source myenv/bin/activate        # Windows: myenv\Scripts\activate
 
 # 2) Install dependencies

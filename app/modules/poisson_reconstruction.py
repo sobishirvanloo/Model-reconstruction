@@ -1214,7 +1214,7 @@ class PoissonReconstruction(TabMixin):
             bar.SetWidth(0.1)
             bar.SetHeight(0.8)
             bar.VisibilityOff()
-            self.renderer.AddActor2D(bar)
+            self.renderer.AddViewProp(bar)
             self._scalar_bar = bar
         if mapper is None:
             self._scalar_bar.VisibilityOff()

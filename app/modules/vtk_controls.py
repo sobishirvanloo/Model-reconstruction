@@ -115,7 +115,7 @@ class VTKViewport:
         prop.SetLineSpacing(1.5)
         self.hint.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
         self.hint.SetPosition(0.5, 0.5)
-        owner.renderer.AddActor2D(self.hint)
+        owner.renderer.AddViewProp(self.hint)
 
         self.apply_theme(LIGHT)
 
@@ -207,7 +207,7 @@ class VTKViewport:
             elif isinstance(prop, vtk.vtkScalarBarActor):
                 bar = vtk.vtkScalarBarActor()
                 bar.ShallowCopy(prop)
-                renderer.AddActor2D(bar)
+                renderer.AddViewProp(bar)
 
         camera = vtk.vtkCamera()
         camera.DeepCopy(source.GetActiveCamera())
