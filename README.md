@@ -52,7 +52,8 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
   background, and guides for reading the model: a floor grid (square size
   shown), a ruler with tick labels in model units, the **object axes and
   box** (they turn and move with the model, in step with the rotation /
-  position values and the corner axes), and a read-out of rotation /
+  position values and the corner axes; the box's 8 corners are labelled
+  with their current x, y, z — labels that would overlap are skipped), and a read-out of rotation /
   position relative to the pose the model was loaded in.
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*

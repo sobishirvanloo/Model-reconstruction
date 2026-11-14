@@ -60,6 +60,7 @@ DEFAULTS = {
         "ruler": False,
         "object_axes": False,
         "object_outline": False,
+        "box_coordinates": True,      # x, y, z at the box corners
         "readout": False,
     },
 }
@@ -254,6 +255,9 @@ class BackgroundSettingsDialog(_SettingsDialog):
          "the corner axes"),
         ("object_outline", "Object box",
          "The model's bounding box, turning and moving with the model"),
+        ("box_coordinates", "    Coordinates on the box corners",
+         "Writes x, y, z (model units) at each corner of the object box; "
+         "labels that would overlap are left out"),
         ("readout", "Rotation / position read-out",
          "Angles and offsets relative to the starting pose, in a corner"),
     )
@@ -293,10 +297,19 @@ class BackgroundSettingsDialog(_SettingsDialog):
         box = QVBoxLayout(guides)
         self.checks = {}
         for key, text, tip in self.GUIDES:
-            check = QCheckBox(text)
+            check = QCheckBox(text.strip())
             check.setToolTip(tip)
-            box.addWidget(check)
+            if text != text.strip():           # option of the line above
+                row = QHBoxLayout()
+                row.addSpacing(24)
+                row.addWidget(check)
+                box.addLayout(row)
+            else:
+                box.addWidget(check)
             self.checks[key] = check
+        # Corner coordinates belong to the box
+        self.checks["object_outline"].toggled.connect(
+            self.checks["box_coordinates"].setEnabled)
         hint = QLabel("Rotation and position are measured from the pose the "
                       "model had when it was loaded.")
         hint.setProperty("role", "hint")
@@ -324,6 +337,7 @@ class BackgroundSettingsDialog(_SettingsDialog):
         self.bottom_button.set_color(values["color_bottom"])
         for key, check in self.checks.items():
             check.setChecked(bool(values[key]))
+        self.checks["box_coordinates"].setEnabled(bool(values["object_outline"]))
 
 
 # =========================
@@ -370,6 +384,23 @@ class SceneOverlays:
         self.ruler.SetXTitle("X")
         self.ruler.SetYTitle("Y")
         self.ruler.SetZTitle("Z")
+        # x, y, z written at the box corners; the placement mapper drops
+        # labels that would overlap (e.g. back corners behind front ones)
+        self._corner_hierarchy = vtk.vtkPointSetToLabelHierarchy()
+        self._corner_hierarchy.SetInputData(vtk.vtkPolyData())
+        self._corner_hierarchy.SetLabelArrayName("coords")
+        label_text = self._corner_hierarchy.GetTextProperty()
+        label_text.SetFontSize(12)
+        label_text.SetBold(True)
+        label_text.ShadowOff()
+        placement = vtk.vtkLabelPlacementMapper()
+        placement.SetInputConnection(self._corner_hierarchy.GetOutputPort())
+        placement.SetShapeToRoundedRect()
+        placement.SetStyleToFilled()
+        placement.SetBackgroundOpacity(0.75)
+        placement.SetMargin(3)
+        self.corner_labels = vtk.vtkActor2D()
+        self.corner_labels.SetMapper(placement)
         self.readout = vtk.vtkTextActor()
         self.readout.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
         self.readout.SetPosition(0.01, 0.97)
@@ -380,7 +411,7 @@ class SceneOverlays:
         text.ShadowOff()
 
         for prop in (self.grid, self.outline, self.object_axes, self.ruler,
-                     self.readout):
+                     self.corner_labels, self.readout):
             prop.SetPickable(False)
             prop.SetVisibility(False)
             renderer.AddViewProp(prop)
@@ -432,6 +463,12 @@ class SceneOverlays:
             prop.SetLineWidth(1.5)
         self.outline.SetVisibility(bool(options["object_outline"]))
 
+        show_coordinates = bool(options["object_outline"]
+                                and options.get("box_coordinates", True))
+        if show_coordinates:
+            self._update_corner_labels(bounds, pose, color, diagonal)
+        self.corner_labels.SetVisibility(show_coordinates)
+
         if options["object_axes"]:
             length = diagonal * 0.7           # long enough to leave the model
             self.object_axes.SetTotalLength(length, length, length)
@@ -475,6 +512,36 @@ class SceneOverlays:
             self.readout.SetInput("\n".join(lines))
             self.readout.GetTextProperty().SetColor(*color)
         self.readout.SetVisibility(bool(options["readout"]))
+
+    def box_corners(self, bounds, pose):
+        """The 8 corners of the model box where they are now (world
+        coordinates: rotation and position applied)."""
+        matrix = np.array([[pose.GetElement(i, j) for j in range(4)]
+                           for i in range(4)])
+        corners = np.array([(x, y, z) for x in bounds[0:2]
+                            for y in bounds[2:4] for z in bounds[4:6]])
+        return corners @ matrix[:3, :3].T + matrix[:3, 3]
+
+    def _update_corner_labels(self, bounds, pose, color, diagonal):
+        corners = self.box_corners(bounds, pose)
+        # fixed decimals that suit the model size (1 for a 100-unit model)
+        decimals = min(6, max(0, 3 - math.floor(math.log10(diagonal))))
+        points = vtk.vtkPoints()
+        texts = vtk.vtkStringArray()
+        texts.SetName("coords")
+        for corner in corners:
+            points.InsertNextPoint(*corner)
+            texts.InsertNextValue(
+                "({})".format(", ".join(f"{v:.{decimals}f}" for v in corner)))
+        polydata = vtk.vtkPolyData()
+        polydata.SetPoints(points)
+        polydata.GetPointData().AddArray(texts)
+        self._corner_hierarchy.SetInputData(polydata)
+        self._corner_hierarchy.GetTextProperty().SetColor(*color)
+        # dark label background on a light text colour and vice versa
+        light_text = sum(color) / 3 > 0.5
+        self.corner_labels.GetMapper().SetBackgroundColor(
+            *((0.10, 0.12, 0.15) if light_text else (1.0, 1.0, 1.0)))
 
     def _update_grid(self, low, high, center, diagonal, step, color):
         key = (tuple(low), tuple(high), tuple(color))
