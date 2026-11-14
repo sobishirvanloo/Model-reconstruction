@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.uic import loadUi
 
 from modules import settings, theme
+from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
@@ -22,7 +23,8 @@ from modules.splash_screen import create_splash_and_show
 from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
 
-TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct")
+TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct",
+              "4   Compare")
 MESH_ONLY = (".stl", ".obj", ".off", ".gltf", ".glb")
 TABLE_ONLY = (".txt", ".csv", ".npy")
 MESSAGE_TIMEOUT_MS = {"info": 6000, "success": 6000, "warning": 10000,
@@ -67,14 +69,17 @@ class MainWindow(QMainWindow):
         self.geometry = Geometry(self)
         self.processing = Processing(self)
         self.poisson = PoissonReconstruction(self)
-        self.tabs = (self.geometry, self.processing, self.poisson)
-        self.pages = (self.tab, self.tab_2, self.tab_5)
-        # Drag the dividers to resize view / panel / console
+        self.compare = Compare(self)
+        self.tabWidget.addTab(self.compare.page, "")
+        self.tabs = (self.geometry, self.processing, self.poisson, self.compare)
+        self.pages = (self.tab, self.tab_2, self.tab_5, self.compare.page)
+        # Drag the dividers to resize view / panel / console (tab 4 has
+        # its result tables beside the log instead of the object info)
         self.splitters = [
             make_resizable(key, tab.frame_view, tab.frame_console,
-                           tab.info_panel)
-            for key, tab in zip(("import", "processing", "reconstruction"),
-                                self.tabs)
+                           getattr(tab, "results", tab.info_panel))
+            for key, tab in zip(("import", "processing", "reconstruction",
+                                 "compare"), self.tabs)
         ]
 
         for tab in self.tabs:
@@ -114,7 +119,9 @@ class MainWindow(QMainWindow):
         PLY / PCD to the current tab."""
         ext = os.path.splitext(path)[1].lower()
         current = self.current_tab()
-        if ext in MESH_ONLY:
+        if current is self.compare and ext in MESH_EXTENSIONS:
+            target = self.compare       # the reconstruction to compare
+        elif ext in MESH_ONLY:
             target = self.geometry
         elif ext in TABLE_ONLY:
             target = current if current is not self.geometry else self.processing
@@ -135,6 +142,11 @@ class MainWindow(QMainWindow):
             tab.import_files()
         else:
             tab.import_file()
+
+    def send_to_compare(self):
+        """Tab 3 -> tab 4: the reconstruction and its ground truth."""
+        self.show_tab(self.compare)
+        self.compare.from_reconstruction()
 
     def open_sample(self):
         self.show_tab(self.geometry)

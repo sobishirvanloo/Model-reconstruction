@@ -553,6 +553,9 @@ class VTKViewport:
             self.background_settings = dict(values)
             self.apply_background()
             self.update_overlays()
+        changed = getattr(self.owner, "view_settings_changed", None)
+        if changed:
+            changed(kind)
         self.render()
 
     def style_actor(self, actor, kind):

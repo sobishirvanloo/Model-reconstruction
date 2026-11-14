@@ -10,6 +10,40 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 | **Import mesh** | Import 3D geometry (PLY mesh or point cloud / OBJ / STL / PCD), view it in VTK, rotate it with sliders/spinboxes or the mouse, then **send it to Processing / Reconstruction** or export points + normals. Duplicate STL vertices are merged on import. |
 | **Point Cloud Processing** | Import a point cloud or receive one from *Import mesh*, shuffle the points, reduce density with **voxel downsampling** (`0` = original), then **send it to Reconstruction** or export it (normals are estimated if none were imported). |
 | **Reconstruction** | Import a point cloud with normals or receive one from another tab, reconstruct a surface with **Poisson**, **Ball Pivoting** or **Alpha Shape** (Open3D), measure its quality and export the result as STL / OBJ. |
+| **Compare** | Compare the reconstruction with the original mesh using 7 distance methods and error statistics (see below). |
+
+### Comparing a reconstruction with the original (tab 4)
+
+*Send to Compare* in tab 3 hands over the mesh and its ground truth (or
+open both files, or take the reference from tab 1). *Run comparison*
+computes, on a background thread:
+
+| Method | Distance of each compared point to … | Signed |
+|---|---|---|
+| Point-to-point | the nearest reference vertex | no |
+| Point-to-plane | the tangent plane of the nearest reference vertex | yes |
+| Point-to-mesh | the exact closest point on the reference triangles | yes |
+| Cloud-to-cloud | the nearest point of a dense uniform sampling of the reference (both surfaces sampled, *Samples* points each) | no |
+| Adaptive cloud-to-cloud | a least-squares plane through 6 / 12 / 24 reference samples — per point the largest neighbourhood that is still planar | yes |
+| Cloud-to-mesh | the reference triangles, for the dense sampling of the compared surface | yes |
+| M3C2 | Lague et al. 2013: normal at the most planar of 4 scales, mean of each cloud inside a cylinder along it; with a 95 % level of detection | yes |
+
+Point-to-point and cloud-to-cloud also measure the sampling gap between
+points, so they read higher than the surface methods. Signed: + outside,
+− inside the reference. Mesh methods are skipped when the reference is a
+point cloud. Nearest neighbours use Open3D's multithreaded KD-tree, exact
+surface distances its BVH `RaycastingScene`, plane fits vectorised PCA;
+on the bunny all seven take ≈ 6 s. Keep the M3C2 *depth* just above the
+expected error: a long cylinder reaches the other side of thin parts.
+
+**Errors** table per method: mean e, SD, MAE, RMSE, R² (= 1 − Σe² /
+Σ‖q − q̄‖², q the matched reference points), median / P95 / max |e|,
+time; the best value of each column is bold. **Distribution**: error
+histograms of all methods overlaid, or the selected one. **View**: one
+method on the reconstruction (click a table row to switch) or **all
+methods in a grid** of linked views with one colour scale; the reference
+can be overlaid translucent; |e| or signed colours; colour max = P95 or
+your value. Export the table as CSV or copy it as Markdown.
 
 ### User interface
 

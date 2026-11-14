@@ -567,6 +567,9 @@ class PoissonReconstruction(TabMixin):
 
         self.btn_quality = add_button_after(self.btn_export, "Quality report")
         self.btn_quality.clicked.connect(self.show_report)
+        self.btn_send_compare = add_button_after(self.btn_quality,
+                                                 "Send to Compare")
+        self.btn_send_compare.clicked.connect(self._send_to_compare)
 
         # ---------- Connect buttons ----------
         self.btn_import.clicked.connect(lambda: self.import_files())
@@ -603,6 +606,9 @@ class PoissonReconstruction(TabMixin):
         self.decorate(self.btn_export, QStyle.SP_DialogSaveButton,
                       "Save the mesh as STL or OBJ, rotation applied (Ctrl+S)",
                       "primary")
+        self.decorate(self.btn_send_compare, QStyle.SP_ArrowForward,
+                      "Compare this mesh with the original in tab 4 "
+                      "(7 distance methods, error statistics)")
         self.decorate(self.btn_quality, QStyle.SP_FileDialogDetailedView,
                       "Quality metrics, error heatmap, run history and "
                       "robustness sweeps (Ctrl+R)")
@@ -1263,6 +1269,14 @@ class PoissonReconstruction(TabMixin):
         self.sweep_dialog.set_status(title + " - summary in the Quality Report.")
         self.notify(f"🧪 {title}", "warning" if sweep["failures"] else "success")
         self.show_report()
+
+    def _send_to_compare(self):
+        if self._mesh_arrays is None:
+            self.notify("❌ Reconstruct a mesh first", "warning")
+            return
+        send = getattr(self.main_window, "send_to_compare", None)
+        if send:
+            send()
 
     def show_report(self):
         self.report.show()
