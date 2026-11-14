@@ -40,6 +40,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QLabel,
+    QPushButton,
     QStyle,
 )
 
@@ -533,6 +534,9 @@ class PoissonReconstruction(TabMixin):
         self._scalar_bar = None
         self.data_note = ""           # how the loaded data was degraded
         self._sweep = None            # state of a running robustness sweep
+        self._optimize = None         # state of a running optimisation
+        self._send_after_build = False
+        self.optimize_dialog = None   # created on first use
 
         # Console + toolbar + VTK render window + axes
         VTKViewport(
@@ -643,6 +647,7 @@ class PoissonReconstruction(TabMixin):
         self.decorate(self.btn_send_compare, QStyle.SP_ArrowForward,
                       "Compare this mesh with the original in tab 4 "
                       "(7 distance methods, error statistics)")
+        self.decorate(self.btn_optimize, QStyle.SP_FileDialogContentsView)
         self.decorate(self.btn_quality, QStyle.SP_FileDialogDetailedView,
                       "Quality metrics, error heatmap, run history and "
                       "robustness sweeps (Ctrl+R)")
@@ -677,8 +682,14 @@ class PoissonReconstruction(TabMixin):
             "Multiple of the mean distance between neighbouring points."
         )
 
+        self.btn_optimize = QPushButton("Optimize parameters…")
+        self.btn_optimize.setToolTip(
+            "Search the settings that fit the reference mesh best "
+            "(one algorithm or all of them), then apply them")
+        self.btn_optimize.clicked.connect(self.show_optimize_dialog)
         for widget in (self.label_algorithm, self.combo_algorithm,
-                       self.label_factor, self.doubleSpinBox_factor):
+                       self.label_factor, self.doubleSpinBox_factor,
+                       self.btn_optimize):
             insert_widget(main_window.Depth, widget, after=False)
 
         self.algorithm = POISSON
@@ -766,6 +777,7 @@ class PoissonReconstruction(TabMixin):
     def load_data(self, data, title):
         if self._sweep is not None:
             self.cancel_sweep()       # its results belong to the old data
+        self.cancel_optimize()
         self.points = data.points.copy()
         self.normals = data.normals.copy()
         self.colors = None if data.colors is None else data.colors.copy()
@@ -877,6 +889,7 @@ class PoissonReconstruction(TabMixin):
         reconstruction is ignored)."""
         if self._sweep is not None:
             self.cancel_sweep()
+        self.cancel_optimize()
         self._live_timer.stop()
         self._pending_run = False
         self._pending_eval = False
@@ -946,6 +959,7 @@ class PoissonReconstruction(TabMixin):
         the run history (small) is kept for comparison."""
         if self._sweep is not None:
             self.cancel_sweep()
+        self.cancel_optimize()
         self._live_timer.stop()
         self._pending_run = False
         self._pending_eval = False
@@ -1087,6 +1101,9 @@ class PoissonReconstruction(TabMixin):
         if result["kind"] == "sweep_end":
             self._finish_sweep(result)
             return
+        if result["kind"] == "optimize_end":
+            self._finish_optimize(result)
+            return
         if result["generation"] != self._data_generation:
             return  # result for data that has since been replaced
 
@@ -1137,6 +1154,11 @@ class PoissonReconstruction(TabMixin):
             self.btn_export.setEnabled(not self._pending_run)
             self.record_checkpoint(
                 f"{ALGORITHM_LABELS[result['algorithm']]} · {result['setting']}")
+            if self._send_after_build and not self._pending_run:
+                self._send_after_build = False      # "Apply & Send to Compare"
+                send = getattr(self.main_window, "send_to_compare", None)
+                if send:
+                    send()
         elif self.heatmap_enabled:
             self._render_mesh()
 
@@ -1145,6 +1167,8 @@ class PoissonReconstruction(TabMixin):
         self.notify(f"❌ Reconstruction failed: {message}", "error")
         if self._sweep is not None:
             self._finish_sweep({"cancelled": True})
+        if self._optimize is not None:
+            self._finish_optimize({"cancelled": True, "results": [], "best": None})
 
     def _on_worker_finished(self):
         # QThread.finished: the thread has fully stopped - safe to release
@@ -1253,12 +1277,147 @@ class PoissonReconstruction(TabMixin):
         if set_progress:
             set_progress(0, len(levels) * len(algorithms))
 
+    # =========================
+    # Parameter optimisation
+    # =========================
+    def show_optimize_dialog(self):
+        if self.optimize_dialog is None:
+            from modules.optimize_dialog import OptimizeDialog
+            self.optimize_dialog = OptimizeDialog(self.main_window)
+            self.optimize_dialog.run_requested.connect(self.start_optimize)
+            self.optimize_dialog.cancel_requested.connect(self.cancel_optimize)
+            self.optimize_dialog.apply_requested.connect(self.apply_trial)
+        self.optimize_dialog.set_reference(self.reference is not None,
+                                           self.algorithm)
+        self.optimize_dialog.show()
+        self.optimize_dialog.raise_()
+        self.optimize_dialog.activateWindow()
+
+    def start_optimize(self, options):
+        dialog = self.optimize_dialog
+        if self.points is None:
+            dialog.set_status("❌ Load data in this tab first.")
+            return
+        if self._worker is not None or self._sweep is not None or self._optimize:
+            dialog.set_status("⏳ Another job is running - try again when it "
+                              "finishes.")
+            return
+        from modules.optimizer import run_optimization
+        self._live_timer.stop()
+        cancel = threading.Event()
+        generation = self._data_generation
+        self._optimize = {"cancel": cancel, "generation": generation}
+        dialog.set_running(True)
+        dialog.set_status("Starting…")
+        names = ", ".join(ALGORITHM_LABELS[a] for a in options["algorithms"])
+        self.console.appendPlainText(
+            f"🎯 Optimising {names}: {options['budget']} runs each, objective "
+            f"{options['objective']}, min recall {options['min_recall']:.0%}")
+        args = (self.points.copy(), self.normals.copy(), self.reference,
+                self._current_params())
+
+        def job(progress):
+            result = run_optimization(
+                *args, options["algorithms"], options["budget"],
+                options["objective"], options["min_recall"],
+                options["validate_noise"], cancel, progress)
+            result.update(kind="optimize_end", generation=generation)
+            return result
+
+        self._launch(job, "Optimising parameters…")
+
+    def _on_optimize_step(self, step):
+        if self._optimize is None:
+            return
+        trial = step["trial"]
+        self.optimize_dialog.add_trial(step)
+        name = ALGORITHM_LABELS[trial["algorithm"]]
+        if "metrics" in trial:
+            m = trial["metrics"]
+            self.console.appendPlainText(
+                f"🎯 {step['done']}/{step['total']} {name} {trial['setting']}: "
+                f"F {m['f_score']:.4f} · Chamfer {m['chamfer_pct']:.4f} %")
+        else:
+            self.console.appendPlainText(
+                f"🎯 {step['done']}/{step['total']} {name}: {trial['error']}")
+        set_progress = getattr(self.main_window, "set_progress", None)
+        if set_progress:
+            set_progress(step["done"], step["total"],
+                         f"🎯 Optimising {step['done']}/{step['total']}")
+
+    def _finish_optimize(self, result):
+        state, self._optimize = self._optimize, None
+        if state is None:
+            return
+        dialog = self.optimize_dialog
+        dialog.set_running(False)
+        if result.get("generation", state["generation"]) != self._data_generation:
+            dialog.set_status("The data changed - results discarded.")
+            return
+        dialog.show_result(result)
+        best = result.get("best")
+        if best and "metrics" in best:
+            m = best["metrics"]
+            text = (f"🎯 Best: {ALGORITHM_LABELS[best['algorithm']]} "
+                    f"{best['setting']} - F {m['f_score']:.4f}, Chamfer "
+                    f"{m['chamfer_pct']:.4f} %")
+            self.console.appendPlainText(text)
+            dialog.set_status(text.lstrip("🎯 ") + " - Apply to use it.")
+            self.notify(text, "success")
+        else:
+            dialog.set_status("Optimisation finished without a usable run.")
+
+    def cancel_optimize(self):
+        if self._optimize is not None:
+            self._optimize["cancel"].set()
+            if self.optimize_dialog is not None:
+                self.optimize_dialog.set_status("Cancelling after the current run…")
+
+    def apply_trial(self, trial, send=False):
+        """Set the parameters of an optimisation run and rebuild the mesh
+        (``send``: then hand it to the Compare tab)."""
+        if self.points is None or self._optimize is not None:
+            return
+        algorithm = trial["algorithm"]
+        values = trial["values"]
+        self.algorithm = algorithm
+        self.combo_algorithm.blockSignals(True)
+        self.combo_algorithm.setCurrentIndex(self.combo_algorithm.findData(algorithm))
+        self.combo_algorithm.blockSignals(False)
+        if "factor" in values:
+            self.factors[algorithm] = values["factor"]
+        self._show_algorithm_controls()
+        widgets = {
+            "depth": (self.spinBox_depth, int),
+            "density_q": (self.doubleSpinBox_density, lambda v: 100.0 * v),
+            "smooth": (self.spinBox_smooth, int),
+            "scale": (self.doubleSpinBox_scale, float),
+        }
+        for name, value in values.items():
+            if name in widgets:
+                widget, convert = widgets[name]
+                widget.blockSignals(True)
+                widget.setValue(convert(value))
+                widget.blockSignals(False)
+        if algorithm == POISSON:
+            self.doubleSpinBox_width.blockSignals(True)
+            self.doubleSpinBox_width.setValue(0.0)       # the search used depth
+            self.doubleSpinBox_width.blockSignals(False)
+        self.console.appendPlainText(
+            f"🎯 Applied: {ALGORITHM_LABELS[algorithm]} {trial['setting']}")
+        self._send_after_build = send
+        self._live_timer.stop()
+        self._restart_reconstruction()
+
     def cancel_sweep(self):
         if self._sweep is not None:
             self._sweep["cancel"].set()
             self.sweep_dialog.set_status("Cancelling after the current run…")
 
     def _on_sweep_step(self, step):
+        if step.get("kind") == "optimize":
+            self._on_optimize_step(step)
+            return
         sweep = self._sweep
         if sweep is None or sweep["generation"] != self._data_generation:
             return

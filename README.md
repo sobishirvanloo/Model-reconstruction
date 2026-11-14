@@ -12,6 +12,35 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 | **Reconstruction** | Import a point cloud with normals or receive one from another tab, reconstruct a surface with **Poisson**, **Ball Pivoting** or **Alpha Shape** (Open3D), measure its quality and export the result as STL / OBJ. |
 | **Compare** | Compare the reconstruction with the original mesh using 7 distance methods and error statistics (see below). |
 
+### Optimising the parameters (tab 3 → *Optimize parameters…*)
+
+Searches the settings that fit the reference (ground-truth) mesh best,
+for one algorithm or **all of them** (each tuned on its own, then
+compared fairly):
+
+* **Objective** — two-sided, so dropping the hard parts of the surface
+  does not pay off: F-score @ 1 % of the diagonal (default), Chamfer, or
+  the one-sided accuracy RMS of tab 4 together with a **minimum recall**
+  (default 80 %; runs below it are listed but cannot win).
+* **Search** — coordinate descent: a coarse pass over each parameter
+  (Poisson: depth, density filter, smoothing, scale; the others: their
+  radius / α factor and smoothing), then refinement around the best value
+  (±1, ×0.8 / ×1.25, midpoints) until nothing improves or the run budget
+  (default 25 per algorithm) is spent. Each setting runs once; the
+  preprocessing cache is shared. Runs in the background, cancellable.
+* **Check** — the starting and the best settings are re-run on a noisy
+  copy (σ = 0.25 % of the diagonal), showing whether the gain is real or
+  only fits this data set.
+* **Result** — table of all runs (best starred), convergence chart,
+  *Apply best to the tab* (or the selected row), *Apply & Send to
+  Compare*, CSV / Markdown.
+
+On the bunny, Poisson went from F 0.892 / Chamfer 0.42 % (depth 8,
+density 2 %) to F 0.933 / 0.33 % (depth 6, no density filter: fewer
+holes, recall 80 → 89 %), and the gain held on noisy data (0.893 → 0.932).
+Without a reference mesh the fit to the input points is optimised, which
+is weaker; send the data from tab 1 or load a reference first.
+
 ### Comparing a reconstruction with the original (tab 4)
 
 *Send to Compare* in tab 3 hands over the mesh and its ground truth (or
