@@ -18,7 +18,7 @@ import os
 import numpy as np
 import vtk
 from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QColor, QCursor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -47,6 +47,7 @@ from PyQt5.QtWidgets import (
 from vtk.util import numpy_support
 
 from modules import settings
+from modules.alignment import align, describe, is_aligned, misalignment
 from modules.comparison_metrics import (
     DEFAULT_PARAMS,
     MESH_METHODS,
@@ -231,6 +232,7 @@ class Compare(TabMixin):
         self.source_name = ""
         self.reference_name = ""
         self.comparison = None        # run_comparison() output
+        self.alignment = np.eye(4)    # applied to the compared model
         self._worker = None
         self._generation = 0
         self.ref_actor = None         # reference drawn over the compared one
@@ -304,6 +306,18 @@ class Compare(TabMixin):
         self.btn_from_import = button(
             "From Import mesh tab", QStyle.SP_ArrowBack,
             "Use the mesh shown in tab 1 (its rotation applied)")
+        self.check_auto_align = QCheckBox("Align automatically when opening", panel)
+        self.check_auto_align.setChecked(True)
+        self.check_auto_align.setToolTip(
+            "If the two models are not in the same place / orientation "
+            "(e.g. the reconstruction was saved rotated), move the "
+            "reconstruction onto the reference: feature matching (FPFH + "
+            "RANSAC) then ICP. Models that already match are left as they are.")
+        layout.addWidget(self.check_auto_align)
+        self.btn_align = button(
+            "Align now", QStyle.SP_BrowserReload,
+            "Register the reconstruction onto the reference now (also when "
+            "they look aligned: a final ICP fit)")
 
         # Rotation (same widgets as the .ui tabs)
         for axis in "XYZ":
@@ -406,6 +420,7 @@ class Compare(TabMixin):
         self.btn_from_reconstruct.clicked.connect(self.from_reconstruction)
         self.btn_open_reference.clicked.connect(lambda: self.open_reference())
         self.btn_from_import.clicked.connect(self.from_import_tab)
+        self.btn_align.clicked.connect(lambda: self.align_models(force=True))
         self.btn_run.clicked.connect(self.run)
         self.btn_export.clicked.connect(self.export_data)
         self.btn_copy.clicked.connect(self.copy_markdown)
@@ -467,9 +482,9 @@ class Compare(TabMixin):
         loaded = self.compared is not None or self.reference is not None
         for widget in self.rotation_widgets():
             widget.setEnabled(loaded)
-        self.btn_run.setEnabled(self.compared is not None
-                                and self.reference is not None
-                                and self._worker is None)
+        both = self.compared is not None and self.reference is not None
+        self.btn_run.setEnabled(both and self._worker is None)
+        self.btn_align.setEnabled(both and self._worker is None)
         done = self.comparison is not None
         for widget in (self.btn_export, self.btn_copy):
             widget.setEnabled(done)
@@ -545,18 +560,76 @@ class Compare(TabMixin):
         self.set_models(self.compared, reference, self.source_name, reference.name)
 
     def set_models(self, compared, reference, compared_name, reference_name):
-        """New models: old results no longer apply."""
+        """New models: old results no longer apply.
+
+        The rotation / position the user gave the view is kept, so a model
+        opened second appears in the same pose as the first one; when the
+        two are not in the same coordinates the reconstruction is aligned
+        onto the reference (``check_auto_align``)."""
         self._generation += 1
+        if compared is not self.compared:
+            self.alignment = np.eye(4)
         self.compared, self.reference = compared, reference
         self.source_name, self.reference_name = compared_name, reference_name
         self.comparison = None
-        self.reset_transform()
-        self._show_models(reset_camera=True)
+        first = self.actor is None
+        if first:
+            self.reset_transform()
+        if (compared is not None and reference is not None
+                and self.check_auto_align.isChecked()):
+            self.align_models(force=False, show=False)
+        self._show_models(reset_camera=first)
         self._fill_table()
         self._update_chart()
         names = " vs ".join(n for n in (compared_name, reference_name) if n)
         self.notify(f"Loaded {names}", "success")
         self.record_checkpoint(f"Models: {names}")
+
+    def align_models(self, force=True, show=True):
+        """Move the compared model onto the reference (rigid registration).
+
+        ``force=False`` only aligns models that do not already match, so a
+        reconstruction sent from tab 3 keeps its true error."""
+        if self.compared is None or self.reference is None or self._worker:
+            return False
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            show_message = getattr(self.main_window, "show_message", None)
+            if show_message:
+                show_message("⏳ Checking the alignment of the models…")
+            QApplication.processEvents()
+            if not force and is_aligned(self.compared, self.reference):
+                self.console.appendPlainText(
+                    "📐 The models are in the same coordinates - no alignment needed")
+                return False
+            before = misalignment(self.compared, self.reference)
+            matrix, info = align(self.compared, self.reference)
+            model = self.compared
+            vertices, normals = apply_transform(matrix, model.vertices, model.normals)
+            self.compared = Model(vertices, model.triangles, normals, model.name)
+            self.alignment = matrix @ self.alignment
+            after = misalignment(self.compared, self.reference)
+        except Exception as e:
+            self.notify(f"❌ Alignment failed: {e}", "error", dialog=True)
+            return False
+        finally:
+            QApplication.restoreOverrideCursor()
+        (rx, ry, rz), move = describe(matrix)
+        self.console.appendPlainText(
+            f"📐 Aligned the reconstruction to the reference ({info['method']}): "
+            f"rotation {rx:.2f}°, {ry:.2f}°, {rz:.2f}° · move "
+            f"{move[0]:.4g}, {move[1]:.4g}, {move[2]:.4g} · median gap "
+            f"{before:.4g} → {after:.4g} · overlap {info['fitness']:.0%}")
+        self.notify(f"📐 Models aligned (median gap {before:.3g} → {after:.3g})",
+                    "success")
+        if show:
+            self.comparison = None
+            self._generation += 1
+            self._show_models()
+            self._fill_table()
+            self._update_chart()
+            self.record_checkpoint("Aligned")
+        return True
 
     def _show_models(self, reset_camera=False):
         def describe(model):
@@ -1038,6 +1111,8 @@ class Compare(TabMixin):
                 writer = csv.writer(file)
                 writer.writerow(["compared", self.source_name])
                 writer.writerow(["reference", self.reference_name])
+                writer.writerow(["alignment (4x4, applied to compared)"]
+                                + [f"{v:.9g}" for v in self.alignment.ravel()])
                 for name, value in self.comparison["params"].items():
                     writer.writerow([name, value])
                 writer.writerow([])
@@ -1078,13 +1153,21 @@ class Compare(TabMixin):
         if self.reference is not None:
             rows.append(("Reference points", f"{len(self.reference.vertices):,}",
                          "Vertices of the reference"))
+        if not np.allclose(self.alignment, np.eye(4)):
+            (rx, ry, rz), move = describe(self.alignment)
+            rows.append(("Alignment rotation", f"({rx:.2f}, {ry:.2f}, {rz:.2f})°",
+                         "Rotation applied to the reconstruction to match"))
+            rows.append(("Alignment move",
+                         "(" + ", ".join(f"{v:.4g}" for v in move) + ")",
+                         "Translation applied to the reconstruction to match"))
         return model.vertices, model.normals, model.triangles, ("Comparison", rows)
 
     def snapshot(self):
         return {
             "compared": self.compared, "reference": self.reference,
             "source": self.source_name, "reference_name": self.reference_name,
-            "comparison": self.comparison, **self.pose_state(),
+            "comparison": self.comparison, "alignment": self.alignment,
+            **self.pose_state(),
         }
 
     def restore(self, state):
@@ -1093,6 +1176,7 @@ class Compare(TabMixin):
         self.source_name = state["source"]
         self.reference_name = state["reference_name"]
         self.comparison = state["comparison"]
+        self.alignment = state["alignment"]
         self.restore_pose(state)
         self._show_models()
         self._fill_table()
@@ -1105,6 +1189,7 @@ class Compare(TabMixin):
         self._generation += 1
         self.compared = self.reference = None
         self.comparison = None
+        self.alignment = np.eye(4)
         self.source_name = self.reference_name = ""
         self._clear_grid()
         if self.ref_actor is not None:

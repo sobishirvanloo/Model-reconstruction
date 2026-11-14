@@ -15,7 +15,16 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
 ### Comparing a reconstruction with the original (tab 4)
 
 *Send to Compare* in tab 3 hands over the mesh and its ground truth (or
-open both files, or take the reference from tab 1). *Run comparison*
+open both files, or take the reference from tab 1). The two models always
+overlap: the rotation / position given to the view applies to both, so a
+model opened second appears in the same pose as the first; and when the
+files are not in the same coordinates (e.g. the reconstruction was saved
+rotated) the reconstruction is **aligned onto the reference** on opening —
+FPFH features + RANSAC from any starting pose, then point-to-plane ICP
+(about 1 s; random test poses come back within 0.005 units on the
+175-unit bunny). Models that already match are left untouched, so their
+measured error is not reduced by a refit. *Align now* forces it; the
+applied rotation / move is shown in Object info and saved in the CSV. *Run comparison*
 computes, on a background thread:
 
 | Method | Distance of each compared point to … | Signed |
