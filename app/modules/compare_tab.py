@@ -921,6 +921,12 @@ class Compare(TabMixin):
         self._set_scalar_bar(lut, "e" if signed else "|e|", legend, wide=True)
         self._sync_backgrounds()
 
+    def screenshot_renderers(self):
+        """Renderers a screenshot copies: the main view, plus every grid
+        cell and the legend in the grid mode."""
+        return ([self.renderer] + [r for r, *_ in self._grid]
+                + ([self._legend_renderer] if self._legend_renderer else []))
+
     def _clear_grid(self):
         window = self.vtk_widget.GetRenderWindow()
         for renderer, *_ in self._grid:

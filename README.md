@@ -43,7 +43,8 @@ histograms of all methods overlaid, or the selected one. **View**: one
 method on the reconstruction (click a table row to switch) or **all
 methods in a grid** of linked views with one colour scale; the reference
 can be overlaid translucent; |e| or signed colours; colour max = P95 or
-your value. Export the table as CSV or copy it as Markdown.
+your value. Export the table as CSV or copy it as Markdown; the
+screenshot button saves the whole grid (every method, titles and legend).
 
 ### User interface
 

@@ -655,39 +655,37 @@ class VTKViewport:
         vtkWindowToImageFilter crashed the next render of another tab's
         window (OpenGL context switch), so the live window is never read.
         """
-        source = self.owner.renderer
         width, height = self.owner.vtk_widget.GetRenderWindow().GetSize()
-
         window = vtk.vtkRenderWindow()
         window.SetOffScreenRendering(1)
         window.SetMultiSamples(0)
         window.SetSize(max(width, 400), max(height, 300))
-        renderer = vtk.vtkRenderer()
-        window.AddRenderer(renderer)
-        renderer.SetGradientBackground(source.GetGradientBackground())
-        renderer.SetBackground(source.GetBackground())
-        renderer.SetBackground2(source.GetBackground2())
 
-        props = source.GetViewProps()
-        props.InitTraversal()
-        for _ in range(props.GetNumberOfItems()):
-            prop = props.GetNextProp()
-            if (not prop.GetVisibility() or prop is self.hint
-                    or self.overlays.owns(prop)):
-                continue
-            if isinstance(prop, vtk.vtkActor):
-                renderer.AddActor(self._copy_actor(prop))
-            elif isinstance(prop, vtk.vtkScalarBarActor):
-                bar = vtk.vtkScalarBarActor()
-                bar.ShallowCopy(prop)
-                renderer.AddViewProp(bar)
+        # Every renderer of the view (several in the Compare grid: one
+        # per method + the legend), each in its own part of the image
+        sources = getattr(self.owner, "screenshot_renderers",
+                          lambda: [self.owner.renderer])()
+        cameras = {}                       # shared cameras stay shared
+        for source in sources:
+            renderer = vtk.vtkRenderer()
+            renderer.SetViewport(*source.GetViewport())
+            window.AddRenderer(renderer)
+            renderer.SetGradientBackground(source.GetGradientBackground())
+            renderer.SetBackground(source.GetBackground())
+            renderer.SetBackground2(source.GetBackground2())
+            self._copy_props(source, renderer)
 
-        camera = vtk.vtkCamera()
-        camera.DeepCopy(source.GetActiveCamera())
-        renderer.SetActiveCamera(camera)
-        # Guides are rebuilt for the copy (cube axes / text need their own)
-        self.update_overlays(SceneOverlays(renderer))
-        renderer.ResetCameraClippingRange()
+            original = source.GetActiveCamera()
+            key = id(original)
+            if key not in cameras:
+                cameras[key] = vtk.vtkCamera()
+                cameras[key].DeepCopy(original)
+            renderer.SetActiveCamera(cameras[key])
+            if source is self.owner.renderer:
+                # Guides are rebuilt for the copy (cube axes / text need
+                # their own)
+                self.update_overlays(SceneOverlays(renderer))
+            renderer.ResetCameraClippingRange()
         window.Render()
 
         grabber = vtk.vtkWindowToImageFilter()
@@ -701,6 +699,38 @@ class VTKViewport:
         writer.Write()
         window.Finalize()
 
+    def _copy_props(self, source, renderer):
+        """Visible actors, scalar bars and text of ``source`` into
+        ``renderer`` (new GPU resources; the empty hint and the guides
+        are left out)."""
+        props = source.GetViewProps()
+        props.InitTraversal()
+        for _ in range(props.GetNumberOfItems()):
+            prop = props.GetNextProp()
+            if (not prop.GetVisibility() or prop is self.hint
+                    or self.overlays.owns(prop)):
+                continue
+            if isinstance(prop, vtk.vtkScalarBarActor):
+                bar = vtk.vtkScalarBarActor()
+                bar.ShallowCopy(prop)
+                # not part of ShallowCopy: fixed font sizes
+                bar.SetUnconstrainedFontSize(prop.GetUnconstrainedFontSize())
+                for get in ("GetTitleTextProperty", "GetLabelTextProperty"):
+                    text = vtk.vtkTextProperty()
+                    text.ShallowCopy(getattr(prop, get)())
+                    getattr(bar, get.replace("Get", "Set", 1))(text)
+                renderer.AddViewProp(bar)
+            elif isinstance(prop, vtk.vtkTextActor):
+                text = vtk.vtkTextActor()
+                text.SetInput(prop.GetInput())
+                text.GetTextProperty().ShallowCopy(prop.GetTextProperty())
+                text.GetPositionCoordinate().SetCoordinateSystem(
+                    prop.GetPositionCoordinate().GetCoordinateSystem())
+                text.SetPosition(prop.GetPosition())
+                renderer.AddViewProp(text)
+            elif isinstance(prop, vtk.vtkActor) and prop.GetMapper() is not None:
+                renderer.AddActor(self._copy_actor(prop))
+
     @staticmethod
     def _copy_actor(actor):
         """New actor + mapper (own GPU resources) showing the same data."""
@@ -710,6 +740,12 @@ class VTKViewport:
         mapper.SetScalarVisibility(source_mapper.GetScalarVisibility())
         mapper.SetScalarMode(source_mapper.GetScalarMode())
         mapper.SetColorMode(source_mapper.GetColorMode())
+        # per-mapper polygon offset (e.g. the Compare reference overlay)
+        factor, units = vtk.reference(0.0), vtk.reference(0.0)
+        source_mapper.GetRelativeCoincidentTopologyPolygonOffsetParameters(
+            factor, units)
+        mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(
+            float(factor), float(units))
         mapper.SetLookupTable(source_mapper.GetLookupTable())
         mapper.SetScalarRange(source_mapper.GetScalarRange())
         copy = vtk.vtkActor()
@@ -719,6 +755,10 @@ class VTKViewport:
         copy.SetPosition(actor.GetPosition())
         copy.SetOrientation(actor.GetOrientation())
         copy.SetScale(actor.GetScale())
+        if actor.GetUserMatrix() is not None:      # overlay / grid actors
+            matrix = vtk.vtkMatrix4x4()
+            matrix.DeepCopy(actor.GetUserMatrix())
+            copy.SetUserMatrix(matrix)
         return copy
 
     # =========================
