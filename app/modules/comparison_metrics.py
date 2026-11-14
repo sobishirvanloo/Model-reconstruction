@@ -56,6 +56,7 @@ import time
 import numpy as np
 import open3d as o3d
 
+from modules.compute import KNN
 from modules.geometry_utils import estimate_oriented_normals, normalize
 
 METHODS = {
@@ -126,6 +127,21 @@ class Model:
     def has_triangles(self):
         return self.triangles is not None
 
+    def translated(self, offset):
+        """Same model moved by ``offset`` (normals reused, not recomputed)."""
+        model = Model.__new__(Model)
+        model.vertices = self.vertices + offset
+        model.triangles = self.triangles
+        model.normals = self.normals
+        model.name = self.name
+        model.diagonal = self.diagonal
+        model.mesh = None
+        if self.triangles is not None:
+            model.mesh = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(model.vertices),
+                o3d.utility.Vector3iVector(self.triangles.astype(np.int32)))
+        return model
+
     def samples(self, count, seed=0):
         """``count`` points spread uniformly over the surface (with the
         triangle normals); a point cloud is subsampled instead."""
@@ -141,30 +157,8 @@ class Model:
                 normalize(np.asarray(pcd.normals)))
 
 
-class _Index:
-    """KD-tree over a point set (Open3D, multithreaded queries)."""
-
-    def __init__(self, points):
-        self.points = np.asarray(points, dtype=float)
-        self._search = o3d.core.nns.NearestNeighborSearch(
-            o3d.core.Tensor(np.ascontiguousarray(self.points, dtype=np.float32)))
-        self._search.knn_index()
-        self._hybrid_radius = None
-
-    def knn(self, query, k):
-        index, _ = self._search.knn_search(
-            o3d.core.Tensor(np.ascontiguousarray(query, dtype=np.float32)), k)
-        return index.numpy().astype(np.int64).reshape(len(query), k)
-
-    def radius(self, query, radius, max_nn):
-        """Up to ``max_nn`` neighbours within ``radius`` (-1 = none)."""
-        if self._hybrid_radius is None or radius > self._hybrid_radius:
-            self._search.hybrid_index(radius)
-            self._hybrid_radius = radius
-        index, _, _ = self._search.hybrid_search(
-            o3d.core.Tensor(np.ascontiguousarray(query, dtype=np.float32)),
-            radius, max_nn)
-        return index.numpy().astype(np.int64).reshape(len(query), max_nn)
+# KD-tree over a point set: GPU when available, else all CPU cores
+_Index = KNN
 
 
 class _Context:
@@ -470,14 +464,19 @@ def error_stats(values, matched):
     }
 
 
-def to_vertices(values, points, vertices):
-    """Values given at ``points`` carried to ``vertices`` (nearest point)."""
+def to_vertices(values, points, vertices, cache=None):
+    """Values given at ``points`` carried to ``vertices`` (nearest point);
+    ``cache`` reuses the search of a point set several methods share."""
     if points is vertices or (len(points) == len(vertices)
                               and np.shares_memory(points, vertices)):
         return values
-    index = _Index(points)
-    nearest = index.knn(vertices, 1)[:, 0]
-    return values[nearest]
+    key = id(points)
+    if cache is None or key not in cache:
+        nearest = _Index(points).knn(vertices, 1)[:, 0]
+        if cache is None:
+            return values[nearest]
+        cache[key] = nearest
+    return values[cache[key]]
 
 
 # =========================
@@ -496,8 +495,14 @@ def run_comparison(compared, reference, methods=ORDER, params=None,
     has only ``skipped`` (the reason).
     """
     params = dict(DEFAULT_PARAMS, **(params or {}))
+    # Work near the origin: the float32 KD-tree / BVH lose precision with
+    # large coordinates (results are moved back at the end)
+    origin = reference.vertices.mean(axis=0)
+    original_compared = compared
+    compared, reference = compared.translated(-origin), reference.translated(-origin)
     ctx = _Context(compared, reference, params)
     results = {}
+    vertex_cache = {}
     for number, key in enumerate(methods, 1):
         if cancel is not None and cancel.is_set():
             break
@@ -512,7 +517,8 @@ def run_comparison(compared, reference, methods=ORDER, params=None,
             "values": values,
             "points": points,
             "matched": matched,
-            "vertex_values": to_vertices(values, points, compared.vertices),
+            "vertex_values": to_vertices(values, points, compared.vertices,
+                                         vertex_cache),
             "stats": error_stats(values, matched),
             "signed": METHODS[key][1],
             "extra": extra,
@@ -521,6 +527,11 @@ def run_comparison(compared, reference, methods=ORDER, params=None,
         if progress is not None:
             progress((number, len(methods), key))
 
+    for item in results.values():
+        if "points" in item:
+            item["points"] = item["points"] + origin
+            item["matched"] = item["matched"] + origin
+    compared = original_compared
     diagonal = max(compared.diagonal, reference.diagonal)
     warnings = []
     reference_result = results.get("p2m") or results.get("c2c") or results.get("p2p")

@@ -177,6 +177,8 @@ class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballActor):
         self._dolly(self.ZOOM_OUT_FACTOR)
 
 
+CONSOLE_LINES = 5000
+
 # name -> (direction from the focal point to the camera, view-up)
 CAMERA_VIEWS = {
     "Front": ((0, 0, 1), (0, 1, 0)),
@@ -284,6 +286,9 @@ class VTKViewport:
         owner.console = QPlainTextEdit(frame_console)
         owner.console.setObjectName("console")
         owner.console.setReadOnly(True)
+        # Long sessions (optimisation, sweeps) log thousands of lines: keep
+        # the newest ones only, so memory stays bounded
+        owner.console.setMaximumBlockCount(CONSOLE_LINES)
         console_layout = QVBoxLayout(frame_console)
         console_layout.setContentsMargins(0, 0, 0, 0)
         console_layout.addWidget(owner.console)

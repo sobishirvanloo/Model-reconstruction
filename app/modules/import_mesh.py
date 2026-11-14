@@ -138,6 +138,7 @@ class Geometry(TabMixin):
     @staticmethod
     def _load_point_cloud(file_path):
         pcd = o3d.io.read_point_cloud(file_path)
+        pcd.remove_non_finite_points()          # NaN / inf rows crash later
         if len(pcd.points) == 0:
             raise ValueError("File contains no points!")
         pcd = pcd.remove_duplicated_points()
@@ -153,6 +154,11 @@ class Geometry(TabMixin):
         mesh = o3d.io.read_triangle_mesh(file_path)
         if len(mesh.triangles) == 0:
             return None
+        finite = np.isfinite(np.asarray(mesh.vertices)).all(axis=1)
+        if not finite.all():                    # drop NaN / inf vertices
+            mesh.remove_vertices_by_mask(~finite)
+            if len(mesh.triangles) == 0:
+                raise ValueError("the file has no valid (finite) vertices")
         # STL stores every triangle corner separately; merge them so each
         # surface point is exported once with an averaged vertex normal.
         mesh.remove_duplicated_vertices()

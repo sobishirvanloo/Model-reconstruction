@@ -184,9 +184,6 @@ def transfer_colors(source_points, source_colors, target_points):
     reconstruction.  ``None`` when there are no colours."""
     if source_colors is None or target_points is None or len(target_points) == 0:
         return None
-    search = o3d.core.nns.NearestNeighborSearch(
-        o3d.core.Tensor(np.ascontiguousarray(source_points, dtype=np.float32)))
-    search.knn_index()
-    index, _ = search.knn_search(
-        o3d.core.Tensor(np.ascontiguousarray(target_points, dtype=np.float32)), 1)
-    return np.asarray(source_colors)[index.numpy().ravel()]
+    from modules.compute import KNN          # (compute imports this module's deps)
+    index = KNN(source_points).knn(target_points, 1)
+    return np.asarray(source_colors)[index.ravel()]

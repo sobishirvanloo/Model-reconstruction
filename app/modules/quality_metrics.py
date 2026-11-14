@@ -31,6 +31,8 @@ import time
 import numpy as np
 import open3d as o3d
 
+from modules.compute import KNN
+
 N_SAMPLES = 100_000          # surface samples per mesh
 MAX_REFERENCE_POINTS = 200_000
 TAU_RATIO = 0.01             # F-score threshold, fraction of bbox diagonal
@@ -46,38 +48,45 @@ MAX_ALIGNMENT_POINTS = 50_000
 # Distance helpers
 # =========================
 class _SurfaceQuery:
-    """Exact closest-point queries against a triangle mesh."""
+    """Exact closest-point queries against a triangle mesh.
+
+    The BVH works in float32, so the mesh is centred first: with large
+    coordinates (georeferenced data) absolute float32 values made the
+    distances several times too large."""
 
     def __init__(self, mesh):
+        vertices = np.asarray(mesh.vertices)
+        self._origin = vertices.mean(axis=0) if len(vertices) else np.zeros(3)
+        local = o3d.geometry.TriangleMesh(mesh)
+        local.translate(-self._origin)
         self._scene = o3d.t.geometry.RaycastingScene()
-        self._scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(mesh))
+        self._scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(local))
 
     def closest(self, points):
-        query = o3d.core.Tensor(np.ascontiguousarray(points, dtype=np.float32))
+        points = np.asarray(points, dtype=float)
+        query = o3d.core.Tensor(
+            np.ascontiguousarray(points - self._origin, dtype=np.float32))
         result = self._scene.compute_closest_points(query)
-        closest = result["points"].numpy().astype(float)
+        closest = result["points"].numpy().astype(float) + self._origin
         normals = result["primitive_normals"].numpy().astype(float)
         distances = np.linalg.norm(closest - points, axis=1)
         return distances, normals
 
 
 class _PointQuery:
-    """Nearest-neighbour queries against a point cloud (with normals)."""
+    """Nearest-neighbour queries against a point cloud (with normals),
+    on the GPU when available (``compute.KNN``, centred coordinates)."""
 
     def __init__(self, points, normals):
         self._normals = normals
-        self._nns = o3d.core.nns.NearestNeighborSearch(
-            o3d.core.Tensor(np.ascontiguousarray(points, dtype=np.float32))
-        )
-        self._nns.knn_index()
+        self._knn = KNN(points)
 
     def closest(self, points):
-        query = o3d.core.Tensor(np.ascontiguousarray(points, dtype=np.float32))
-        index, dist2 = self._nns.knn_search(query, 1)
-        index = index.numpy().ravel()
-        distances = np.sqrt(dist2.numpy().ravel().astype(float))
+        index, distances = self._knn.knn(np.asarray(points, dtype=float), 1,
+                                         distances=True)
+        index = index.ravel()
         normals = self._normals[index] if self._normals is not None else None
-        return distances, normals
+        return distances.ravel(), normals
 
 
 def _sample(mesh, n=N_SAMPLES):

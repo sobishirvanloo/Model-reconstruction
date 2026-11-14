@@ -14,7 +14,9 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.uic import loadUi
 
-from modules import settings, theme
+import atexit
+
+from modules import compute, isolated, safety, settings, theme
 from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
@@ -52,6 +54,10 @@ SHORTCUTS = (
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        safety.install()                  # errors are logged, not fatal
+        compute.set_gpu_enabled(settings.use_gpu())
+        isolated.warm_up()                # Poisson helper process, in background
+        atexit.register(isolated.shutdown)
         self.theme_name = settings.theme()
         theme.apply_theme(QApplication.instance(), self.theme_name)
 
@@ -265,7 +271,38 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         for splitter in self.splitters:
             splitter.save_state()
+        self.shutdown()
         super().closeEvent(event)
+
+    def shutdown(self):
+        """Stop cleanly: cancel background jobs, wait for their threads
+        (a QThread destroyed while running aborts the program) and release
+        the OpenGL windows."""
+        self.hide()
+        for tab in self.tabs:
+            for cancel in ("cancel_sweep", "cancel_optimize"):
+                if hasattr(tab, cancel):
+                    getattr(tab, cancel)()
+            for timer in ("_live_timer", "_voxel_timer", "_checkpoint_timer"):
+                if getattr(tab, timer, None) is not None:
+                    getattr(tab, timer).stop()
+        for tab in self.tabs:
+            worker = getattr(tab, "_worker", None)
+            if worker is not None and worker.isRunning():
+                self.show_message("⏳ Waiting for a background job to finish…")
+                QApplication.processEvents()
+                worker.wait()
+        for tab in self.tabs:
+            try:
+                tab.vtk_widget.Finalize()
+            except Exception:
+                pass
+        isolated.shutdown()
+
+    def toggle_gpu(self, enabled):
+        settings.set_use_gpu(enabled)
+        compute.set_gpu_enabled(enabled)
+        self.show_message(f"Computations run on: {compute.device_name()}")
 
     def show_mouse_guide(self, visible):
         for tab in self.tabs:
@@ -335,6 +372,15 @@ class MainWindow(QMainWindow):
                      lambda: self.current_tab().checkpoint_forward(), "Alt+Right",
                      QStyle.SP_ArrowForward)
         view_menu.addSeparator()
+        self.action_gpu = self._action(
+            view_menu, "Use &GPU for Computations", self.toggle_gpu,
+            tip="Nearest-neighbour searches (comparison, quality, RIMLS, …) "
+                "on the graphics card when Open3D has CUDA")
+        self.action_gpu.setCheckable(True)
+        self.action_gpu.setChecked(settings.use_gpu() and compute.cuda_available())
+        if not compute.cuda_available():
+            self.action_gpu.setEnabled(False)
+            self.action_gpu.setText("Use GPU for Computations (no CUDA GPU found)")
         self._action(view_menu, "Reset &Layout", self.reset_layout,
                      tip="Default sizes of the 3D view, side panel and console")
         self.action_mouse_guide = self._action(
@@ -412,10 +458,15 @@ class MainWindow(QMainWindow):
             "<h3>Model Reconstruction</h3>"
             "<p>Surface reconstruction from point clouds with Poisson, "
             "Ball Pivoting and Alpha Shapes (Open3D), rendered with VTK.</p>"
-            "<p>Sobhan Shirvanloo</p>")
+            "<p>Sobhan Shirvanloo</p>"
+            f"<p>Computations: {compute.device_name()}<br>"
+            f"Logs: {safety.log_folder()}</p>")
 
 
 # ---------- Main ----------
 if __name__ == "__main__":
+    application = QApplication.instance() or QApplication(sys.argv)
+    application.setApplicationName("ModelReconstruction")
+    safety.install()
     window, app = create_splash_and_show(MainWindow)
     sys.exit(app.exec_())

@@ -61,6 +61,7 @@ from modules.point_data import (
     insert_widget,
     make_scrollable,
 )
+from modules import isolated
 from modules.implicit_reconstruction import (
     reconstruct_rimls as _rimls,
     reconstruct_signed_distance as _signed_distance,
@@ -250,9 +251,14 @@ def reconstruct_poisson(pcd, params):
         depth = depth_for_width(
             np.asarray(pcd.points), params["width"], params["scale"]
         )
-    mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd, depth=depth, scale=params["scale"], linear_fit=params["linear_fit"]
-    )
+    # In a helper process: Open3D's Poisson occasionally segfaults, which
+    # would otherwise take the whole program down (see ``isolated``)
+    vertices, triangles, densities = isolated.poisson(
+        np.asarray(pcd.points), np.asarray(pcd.normals), depth,
+        params["scale"], params["linear_fit"])
+    mesh = o3d.geometry.TriangleMesh(
+        o3d.utility.Vector3dVector(vertices),
+        o3d.utility.Vector3iVector(triangles.astype(np.int32)))
 
     # --- density filtering ---
     densities = np.asarray(densities)

@@ -19,9 +19,9 @@ and refreshed live (throttled) while the model is rotated or moved.
 """
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-import open3d as o3d
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import (
     QApplication,
@@ -35,7 +35,11 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from modules.compute import KNN
+
 REFRESH_MS = 120          # live refresh while dragging
+BACKGROUND_SIZE = 50_000  # points + triangles above which stats run off the UI thread
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="object-info")
 SPACING_SAMPLE = 20000    # points used to estimate the spacing
 
 
@@ -78,12 +82,8 @@ class DataStats:
         if len(points) > SPACING_SAMPLE:
             rng = np.random.default_rng(0)
             sample = points[rng.choice(len(points), SPACING_SAMPLE, replace=False)]
-        search = o3d.core.nns.NearestNeighborSearch(
-            o3d.core.Tensor(np.ascontiguousarray(points, dtype=np.float32)))
-        search.knn_index()
-        _, dist2 = search.knn_search(
-            o3d.core.Tensor(np.ascontiguousarray(sample, dtype=np.float32)), 2)
-        nearest = np.sqrt(dist2.numpy()[:, 1].astype(float))
+        _, distances = KNN(points).knn(sample, 2, distances=True)
+        nearest = distances[:, 1]
         positive = nearest[nearest > 0]
         return {
             "mean": float(nearest.mean()),
@@ -356,6 +356,7 @@ class ObjectInfo:
         self.panel = panel
         self._key = None
         self._stats = None
+        self._pending = None          # (key, future) of a background job
         self._timer = QTimer(panel)
         self._timer.setSingleShot(True)
         self._timer.setInterval(REFRESH_MS)
@@ -376,8 +377,28 @@ class ObjectInfo:
         points, normals, triangles, extra = source
         key = (id(points), id(normals), id(triangles))
         if key != self._key:
-            self._stats = DataStats(points, normals, triangles)
-            self._key = key
+            size = len(points) + (0 if triangles is None else len(triangles))
+            if size < BACKGROUND_SIZE:
+                self._stats, self._key = DataStats(points, normals, triangles), key
+            else:
+                # Large data: compute off the UI thread, show it when ready
+                if self._pending is None or self._pending[0] != key:
+                    self._pending = (key, _executor.submit(
+                        DataStats, points, normals, triangles))
+                    self.panel.set_sections([("Object info", [
+                        ("Computing…", f"{size:,} elements",
+                         "Statistics are computed in the background")])])
+                future = self._pending[1]
+                if not future.done():
+                    self._timer.start()          # poll again shortly
+                    return
+                self._pending = None
+                try:
+                    self._stats, self._key = future.result(), key
+                except Exception as e:
+                    self.panel.set_sections([("Object info", [
+                        ("Error", str(e), "The statistics could not be computed")])])
+                    return
         owner = self.owner
         matrix = owner.actor_matrix()
         rotation = (owner.rotation_x, owner.rotation_y, owner.rotation_z)

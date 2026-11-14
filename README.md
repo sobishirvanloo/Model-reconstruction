@@ -275,6 +275,36 @@ be imported and is available on export as *legacy*.
 **Exports always match the view:** the rotation shown in the viewport (sliders
 or mouse) is applied to exported and sent points, normals and meshes.
 
+## Stability and performance
+
+* **No crash on unexpected errors** — PyQt5 aborts the program when an
+  exception escapes a slot; a global hook logs it (`errors.log`), shows it
+  once and keeps the program running. Native crashes write their stack to
+  `crash.log`, VTK warnings go to `vtk.log` (the log folder is shown in
+  *Help ▸ About*; logs are capped at 2 MB).
+* **Safe exit** — closing the window cancels sweeps / optimisations and
+  waits for running jobs before the OpenGL windows are released.
+* **Open3D's Poisson in a helper process** — Open3D's Poisson
+  reconstruction occasionally segfaults inside the library, which cannot
+  be caught and used to close the program. It now runs in a long-lived
+  helper process (`modules/isolated.py`, started in the background at
+  launch): if it crashes, only the helper dies, a new one starts and the
+  run is retried once.
+* **GPU** — rendering always runs on the graphics card (VTK / OpenGL);
+  nearest-neighbour searches (comparison, quality metrics, RIMLS, colours,
+  object info) run on an NVIDIA GPU when Open3D has CUDA (*View ▸ Use GPU
+  for Computations*) and fall back to all CPU cores automatically, also
+  when the GPU runs out of memory.
+* **Large coordinates** — float32 KD-trees / BVHs work on centred
+  coordinates: georeferenced data (around 10⁶) gives the same errors as
+  data at the origin (it used to be 6–16 × too large).
+* **Memory** — volumetric grids shrink their resolution when they would
+  take more than a quarter of the free RAM; consoles keep the last 5000
+  lines; *Remove data* frees everything a tab holds.
+* **Bad input** — NaN / infinite coordinates are dropped on import.
+* **Responsive UI** — heavy work runs on background threads, including
+  the object statistics of large models.
+
 ## Requirements
 
 * Python **3.14** (tested with numpy 2, VTK 9.7, Open3D 0.20, PyQt5 5.15).

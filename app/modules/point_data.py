@@ -71,11 +71,27 @@ class PointCloudData:
                     f"Mismatch: {len(self.points)} points vs "
                     f"{len(normals)} normals"
                 )
-            self.normals = normalize(normals)
+            # invalid rows are removed below; keep them out of normalize
+            normals = np.where(np.isfinite(normals), normals, np.nan)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                self.normals = normalize(normals)
         if self.colors is not None:
             colors = np.asarray(self.colors, dtype=float)[:, :3]
             # colours are optional: drop them rather than fail
             self.colors = colors if len(colors) == len(self.points) else None
+        # NaN / inf rows (broken files) would crash Open3D / VTK later
+        finite = np.isfinite(self.points).all(axis=1)
+        if self.normals is not None:
+            finite &= np.isfinite(self.normals).all(axis=1)
+        self.dropped = int((~finite).sum())
+        if self.dropped:
+            self.points = self.points[finite]
+            if self.normals is not None:
+                self.normals = self.normals[finite]
+            if self.colors is not None:
+                self.colors = self.colors[finite]
+        if len(self.points) == 0:
+            raise ValueError("no valid (finite) points")
 
     def __len__(self):
         return len(self.points)

@@ -84,3 +84,11 @@ def set_layout_state(key, state):
 
 def clear_layout_state():
     _store().remove("layout")
+
+
+def use_gpu():
+    return _store().value("use_gpu", True, type=bool)
+
+
+def set_use_gpu(enabled):
+    _store().setValue("use_gpu", bool(enabled))

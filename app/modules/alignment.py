@@ -39,10 +39,13 @@ def misalignment(compared, reference, seed=0):
     reference surface (or its points)."""
     query = np.asarray(_cloud(compared, 5000, seed).points)
     if reference.has_triangles:
+        origin = reference.vertices.mean(axis=0)   # float32-safe
+        local = o3d.geometry.TriangleMesh(reference.mesh)
+        local.translate(-origin)
         scene = o3d.t.geometry.RaycastingScene()
-        scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(reference.mesh))
+        scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(local))
         distance = scene.compute_distance(
-            o3d.core.Tensor(query.astype(np.float32))).numpy()
+            o3d.core.Tensor((query - origin).astype(np.float32))).numpy()
     else:
         target = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(reference.vertices))
         distance = np.asarray(o3d.geometry.PointCloud(

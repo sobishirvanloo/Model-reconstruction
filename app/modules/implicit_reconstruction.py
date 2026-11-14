@@ -27,6 +27,8 @@ import open3d as o3d
 import vtk
 from vtk.util import numpy_support
 
+from modules.compute import KNN, available_memory
+
 CELL_FACTOR = 1.5          # grid cell, x mean point spacing
 MAX_CELLS = 300            # cells along the longest side (memory cap)
 BAND_CELLS = 2.5           # band around the points where f is evaluated
@@ -39,11 +41,22 @@ CHUNK = 60_000
 EMPTY = 1e30
 
 
+GRID_MEMORY_SHARE = 0.25   # a grid may use at most 1/4 of the free RAM
+BYTES_PER_CELL = 9         # float32 value + band flag + VTK copy (approx.)
+
+
 def _grid(points, spacing, pad):
-    """Origin, cell size and dimensions of the evaluation grid."""
+    """Origin, cell size and dimensions of the evaluation grid; the cell
+    grows when the grid would not fit comfortably in the free memory."""
     low = points.min(axis=0) - pad
     high = points.max(axis=0) + pad
     cell = max(CELL_FACTOR * spacing, float((high - low).max()) / MAX_CELLS)
+    free = available_memory()
+    if free:
+        budget = GRID_MEMORY_SHARE * free / BYTES_PER_CELL
+        cells = np.prod(np.ceil((high - low) / cell) + 1)
+        if cells > budget:
+            cell *= (cells / budget) ** (1 / 3) * 1.01
     dims = np.ceil((high - low) / cell).astype(np.int64) + 1
     return low, cell, dims
 
@@ -104,6 +117,19 @@ def _surface(image_or_port, radius):
         o3d.utility.Vector3iVector(connectivity.astype(np.int32)))
 
 
+def _sign_inverted(values, points, normals, low, cell, dims, radius):
+    """True when the grid is negative on the side the normals point to
+    (it must be positive outside)."""
+    pick = np.random.default_rng(0).choice(len(points), min(len(points), 2000),
+                                           replace=False)
+    probe = points[pick] + normals[pick] * (0.5 * radius)
+    index = np.clip(np.rint((probe - low) / cell).astype(np.int64), 0, dims - 1)
+    flat = (index[:, 0] * dims[1] + index[:, 1]) * dims[2] + index[:, 2]
+    sample = values[flat]
+    sample = sample[np.abs(sample) < EMPTY * 0.5]
+    return len(sample) > 0 and np.median(sample) < 0
+
+
 def remove_small_pieces(mesh, share=MIN_PIECE):
     """Drop connected pieces with fewer than ``share`` of the triangles of
     the largest one (debris of the band / noise)."""
@@ -122,9 +148,7 @@ def remove_small_pieces(mesh, share=MIN_PIECE):
 def rimls_values(points, normals, queries, h):
     """Robust IMLS function value at ``queries`` (NaN where no point lies
     within h)."""
-    search = o3d.core.nns.NearestNeighborSearch(
-        o3d.core.Tensor(np.ascontiguousarray(points, dtype=np.float32)))
-    search.knn_index()
+    search = KNN(points)                       # GPU when available
     out = np.full(len(queries), np.nan)
     k = min(RIMLS_K, len(points))
     # float32 halves the memory traffic; values are relative to x anyway
@@ -134,9 +158,7 @@ def rimls_values(points, normals, queries, h):
     h2 = h * h
     for start in range(0, len(queries), CHUNK):
         x = np.asarray(queries[start:start + CHUNK], dtype=np.float32)
-        index, _ = search.knn_search(
-            o3d.core.Tensor(np.ascontiguousarray(x, dtype=np.float32)), k)
-        index = index.numpy()
+        index = search.knn(x, k)
         diff = x[:, None, :] - points[index]                 # x − pᵢ
         n = normals[index]
         dist2 = np.einsum("mkj,mkj->mk", diff, diff)
@@ -172,6 +194,9 @@ def rimls_values(points, normals, queries, h):
 def reconstruct_rimls(points, normals, spacing, factor):
     """RIMLS surface; ``factor`` = kernel radius h in mean point spacings
     (larger = smoother, slower)."""
+    # centred: float32 math stays precise for any coordinates
+    origin = np.asarray(points, dtype=float).mean(axis=0)
+    points = np.asarray(points, dtype=float) - origin
     h = factor * spacing
     low, cell, dims = _grid(points, spacing, pad=2 * h)
     band = _band(points, low, cell, dims, BAND_CELLS)
@@ -183,6 +208,7 @@ def reconstruct_rimls(points, normals, spacing, factor):
     finite = np.isfinite(values)
     grid[band[finite]] = values[finite]
     mesh = remove_small_pieces(_extract(grid, low, cell, dims))
+    mesh.translate(origin)
     return mesh, {"h": h, "cell": cell, "grid": tuple(int(d) for d in dims),
                   "setting": f"h = {h:.4g} (×{factor:g})"}
 
@@ -193,6 +219,8 @@ def reconstruct_rimls(points, normals, spacing, factor):
 def reconstruct_signed_distance(points, normals, spacing, factor):
     """Volumetric signed distance; ``factor`` = influence radius in mean
     point spacings (larger = smoother, fills small gaps)."""
+    origin = np.asarray(points, dtype=float).mean(axis=0)
+    points = np.asarray(points, dtype=float) - origin
     radius = factor * spacing
     low, cell, dims = _grid(points, spacing, pad=2 * radius)
     high = low + (dims - 1) * cell
@@ -210,7 +238,22 @@ def reconstruct_signed_distance(points, normals, spacing, factor):
     distance.SetRadius(radius)
     distance.SetDimensions(*(int(d) for d in dims))
     distance.SetBounds(low[0], high[0], low[1], high[1], low[2], high[2])
-    mesh = remove_small_pieces(_surface(distance.GetOutputPort(), radius))
+    distance.Update()
+    # VTK marks unseen cells with -radius and, in current versions, makes
+    # the distance positive *inside* - then the inner edge of the band is
+    # a real zero crossing and a phantom surface appears.  Use VTK's values
+    # with our own empty marker and the sign checked against the normals.
+    values = numpy_support.vtk_to_numpy(
+        distance.GetOutput().GetPointData().GetScalars()).astype(np.float32)
+    nx, ny, nz = (int(d) for d in dims)
+    values = values.reshape(nz, ny, nx).transpose(2, 1, 0).reshape(-1)  # x slowest
+    empty = np.isclose(np.abs(values), radius, rtol=1e-5)
+    values[empty] = EMPTY
+    if _sign_inverted(values, points, normals, low, cell, dims, radius):
+        seen = ~empty
+        values[seen] = -values[seen]
+    mesh = remove_small_pieces(_extract(values, low, cell, dims))
+    mesh.translate(origin)
     return mesh, {"radius": radius, "cell": cell,
                   "grid": tuple(int(d) for d in dims),
                   "setting": f"r = {radius:.4g} (×{factor:g})"}
