@@ -286,6 +286,12 @@ class Geometry(TabMixin):
             file=self.source_name, points=len(self.points),
             triangles=None if self.triangles is None else len(self.triangles))
 
+    def info_source(self):
+        """What the Object info panel describes."""
+        if self.points is None:
+            return None
+        return self.points, self.normals, self.triangles, ()
+
     # =========================
     # Checkpoints
     # =========================

@@ -167,6 +167,24 @@ class Processing(TabMixin):
         self.degrade_dialog.show()
         self.degrade_dialog.raise_()
 
+    def info_source(self):
+        """What the Object info panel describes (the processed points)."""
+        if self.points_changed is None:
+            return None
+        voxel = self.Point_density_spinbox.value()
+        rows = [
+            ("Original points", f"{len(self.points):,}",
+             "Points before downsampling / degradation"),
+            ("Kept", f"{len(self.points_changed) / len(self.points):.1%}",
+             "Share of the original points shown"),
+            ("Voxel size", "off" if voxel <= 0 else f"{voxel:g}",
+             "Downsampling cube size"),
+            ("Degradation", "none" if self.degradation.is_identity
+             else self.degradation.describe(), "Deliberate noise / holes"),
+            ("Shuffled", "yes" if self.shuffled else "no", "Point order randomised"),
+        ]
+        return self.points_changed, self.normals_changed, None, ("Processing", rows)
+
     # =========================
     # Checkpoints
     # =========================

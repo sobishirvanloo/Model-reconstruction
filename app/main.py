@@ -71,7 +71,8 @@ class MainWindow(QMainWindow):
         self.pages = (self.tab, self.tab_2, self.tab_5)
         # Drag the dividers to resize view / panel / console
         self.splitters = [
-            make_resizable(key, tab.frame_view, tab.frame_console)
+            make_resizable(key, tab.frame_view, tab.frame_console,
+                           tab.info_panel)
             for key, tab in zip(("import", "processing", "reconstruction"),
                                 self.tabs)
         ]

@@ -779,6 +779,32 @@ class PoissonReconstruction(TabMixin):
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)
 
+    def info_source(self):
+        """What the Object info panel describes (the reconstructed mesh)."""
+        if self._mesh_arrays is None:
+            return None
+        vertices, normals, triangles = self._mesh_arrays
+        rows = [("Input points", f"{len(self.points):,}",
+                 "Points with normals the mesh was built from")]
+        if self._last_build:
+            rows += [
+                ("Algorithm", ALGORITHM_LABELS[self._last_build["algorithm"]],
+                 "Reconstruction method"),
+                ("Setting", self._last_build["setting"], "Main parameter"),
+                ("Time", f"{sum(self._last_build['timings'].values()):.2f} s",
+                 "Total reconstruction time"),
+            ]
+        if self.last_record:
+            metrics = self.last_record.get("metrics", {})
+            for key, label in (("chamfer_pct", "Chamfer (% diag)"),
+                               ("hausdorff_95_pct", "Hausdorff-95 (% diag)"),
+                               ("f_score", "F-score")):
+                value = metrics.get(key)
+                if isinstance(value, (int, float)):
+                    rows.append((label, f"{value:.4g}",
+                                 "Quality against the reference (Quality report)"))
+        return vertices, normals, triangles, ("Reconstruction", rows)
+
     # =========================
     # Checkpoints
     # =========================
@@ -1117,6 +1143,7 @@ class PoissonReconstruction(TabMixin):
             data=self.data_note,
         )
         self.last_record = record
+        self.object_info.schedule()
 
         against = "mesh" if metrics["reference"] == "mesh" else "points"
         self.console.appendPlainText(

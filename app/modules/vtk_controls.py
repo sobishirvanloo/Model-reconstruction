@@ -54,6 +54,7 @@ from modules import settings
 from modules.geometry_utils import vtk_matrix_to_numpy
 from modules.point_data import add_section, insert_widget, move_widget_after
 from modules import view_settings
+from modules.object_info import ObjectInfo, ObjectInfoPanel
 from modules.theme import LIGHT, PALETTES, view_colors
 from modules.view_settings import (
     BACKGROUND,
@@ -326,6 +327,9 @@ class VTKViewport:
 
         if hasattr(owner, "init_checkpoints"):
             owner.init_checkpoints()
+        # Numbers about the object, shown next to the log
+        owner.info_panel = ObjectInfoPanel(frame_console.parentWidget())
+        owner.object_info = ObjectInfo(owner, owner.info_panel)
         self.object_settings = view_settings.load(OBJECT)
         self.background_settings = view_settings.load(BACKGROUND)
         self.overlays = SceneOverlays(owner.renderer)
@@ -946,6 +950,9 @@ class RotationMixin:
         and a checkpoint is taken once the change settles."""
         self._sync_axes()
         self.viewport.update_overlays()
+        info = getattr(self, "object_info", None)
+        if info is not None:
+            info.schedule()
         later = getattr(self, "checkpoint_later", None)
         if later and self.actor is not None:
             later("Rotation {:.0f}°, {:.0f}°, {:.0f}° · position {:.4g}, "

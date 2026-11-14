@@ -30,6 +30,15 @@ using the **Poisson Reconstruction** algorithm (Open3D) with 3D rendering via **
   contents stretch, and a larger window gives its extra space to the 3D
   view. Double-click a divider for its default size, *View ▸ Reset
   Layout* for all; sizes are remembered per tab.
+* **Object info** next to the log (drag the divider between them):
+  pose; the object box (size, diagonal, volume, surface, centre, the 8
+  corners in world coordinates); the axis-aligned world box; points
+  (count, centroid, mean / min spacing, duplicates, density); normals
+  (unit length, share pointing outward, mean direction, coherence); mesh
+  (triangles, edges, surface area, volume, closed / boundary / non-manifold
+  edges, edge lengths, Euler characteristic, how much of the box it
+  fills); plus processing / reconstruction details per tab. Updated live
+  while the model turns or moves; *Copy* puts it on the clipboard.
 * **Toolbar** above every view: **Reset view** (rotation and position
   back to 0 and the model framed), **◀ 3 / 10 ▶** checkpoints, **View ▾**
   (Front / Top / Side / Iso), **Object ▾**, **Background ▾** and

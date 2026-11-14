@@ -24,7 +24,8 @@ from modules import settings
 
 PANEL_WIDTH = 330          # default side panel width
 PANEL_MIN, PANEL_MAX = 240, 720
-CONSOLE_HEIGHT = 110       # default console height
+CONSOLE_HEIGHT = 200       # default height of the log + object info row
+INFO_WIDTH = 460           # default width of the object info panel
 CONSOLE_MIN = 50
 VIEW_MIN_WIDTH, VIEW_MIN_HEIGHT = 260, 180
 HANDLE = 7                 # divider thickness (px)
@@ -54,7 +55,7 @@ def _widget_at(grid, row, column):
 class TabSplitter:
     """The two splitters of one tab."""
 
-    def __init__(self, key, view, panel, console):
+    def __init__(self, key, view, panel, console, info=None):
         self.key = key
         grid, index = _grid_and_position(view.parentWidget().layout(), view)
         parent = view.parentWidget()
@@ -78,14 +79,25 @@ class TabSplitter:
         self.horizontal.setStretchFactor(0, 1)
         self.horizontal.setStretchFactor(1, 0)
 
+        # Bottom row: log | object info
+        self.bottom = QSplitter(Qt.Horizontal, parent)
+        self.bottom.addWidget(console)
+        if info is not None:
+            info.setMinimumWidth(220)
+            self.bottom.addWidget(info)
+        self.bottom.setStretchFactor(0, 1)
+        self.bottom.setStretchFactor(1, 0)
+
         self.vertical = QSplitter(Qt.Vertical, parent)
         self.vertical.addWidget(self.horizontal)
-        self.vertical.addWidget(console)
+        self.vertical.addWidget(self.bottom)
         self.vertical.setStretchFactor(0, 1)
         self.vertical.setStretchFactor(1, 0)
 
-        for splitter, name in ((self.horizontal, "panel"),
-                               (self.vertical, "console")):
+        splitters = [(self.horizontal, "panel"), (self.vertical, "console")]
+        if self.bottom.count() > 1:
+            splitters.append((self.bottom, "info"))
+        for splitter, name in splitters:
             splitter.setObjectName(f"{key}_{name}_splitter")
             splitter.setHandleWidth(HANDLE)
             splitter.setChildrenCollapsible(False)
@@ -110,11 +122,15 @@ class TabSplitter:
         if only in (None, self.vertical):
             total = max(self.vertical.height(), 800)
             self.vertical.setSizes([total - CONSOLE_HEIGHT, CONSOLE_HEIGHT])
+        if only in (None, self.bottom) and self.bottom.count() > 1:
+            total = max(self.bottom.width(), 1200)
+            self.bottom.setSizes([total - INFO_WIDTH, INFO_WIDTH])
 
     def save_state(self):
         settings.set_layout_state(self.key, {
             "panel": bytes(self.horizontal.saveState()),
             "console": bytes(self.vertical.saveState()),
+            "info": bytes(self.bottom.saveState()),
         })
 
     def restore_state(self):
@@ -123,15 +139,17 @@ class TabSplitter:
             self.horizontal.restoreState(state["panel"])
         if state.get("console"):
             self.vertical.restoreState(state["console"])
+        if state.get("info"):
+            self.bottom.restoreState(state["info"])
 
 
-def make_resizable(key, view, console):
+def make_resizable(key, view, console, info=None):
     """Splitters for a tab whose grid holds ``view`` with the side panel
     to its right (the panel itself or the scroll area wrapping it) and
     ``console`` below (as in ``main.ui``)."""
     grid, index = _grid_and_position(view.parentWidget().layout(), view)
     row, column, _, _ = grid.getItemPosition(index)
     panel = _widget_at(grid, row, column + 1)
-    splitter = TabSplitter(key, view, panel, console)
+    splitter = TabSplitter(key, view, panel, console, info)
     splitter.restore_state()
     return splitter

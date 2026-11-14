@@ -70,7 +70,7 @@ def set_view_settings(kind, values):
 def layout_state(key):
     """Saved splitter states of a tab: {"panel": bytes, "console": bytes}."""
     state = {}
-    for name in ("panel", "console"):
+    for name in ("panel", "console", "info"):
         value = _store().value(f"layout/{key}/{name}")
         if value:
             state[name] = value
