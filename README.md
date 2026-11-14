@@ -135,6 +135,8 @@ screenshot button saves the whole grid (every method, titles and legend).
 | **Poisson** | fits a smooth implicit surface | depth (or width), scale, density filter | closed, smooth surfaces, noise | smooths fine detail, can add "bubbles" |
 | **Ball Pivoting** | rolls balls of radius r, 2r, 4r over the points | ball radius × mean point spacing (default 2) | interpolates the points exactly | holes where sampling is sparse |
 | **Alpha Shape** | keeps Delaunay triangles smaller than α | α × mean point spacing (default 10) | very fast once tetrahedralised | many small pieces, not manifold |
+| **RIMLS** | robust implicit moving least squares (Öztireli et al. 2009): local fits re-weighted to ignore outliers and the far side of thin parts, zero level extracted | kernel radius h × mean spacing (default 6) | sharp features, outliers, one clean surface | slowest (≈ 10 s on the bunny) |
+| **Signed Distance** | volumetric signed distance to the oriented points over a radius (VTK `vtkSignedDistance`, Curless & Levoy style) | influence radius × mean spacing (default 5) | fast, best on noisy data, no debris | slightly smoother than Poisson |
 
 Ball radius and α are multiples of the mean nearest-neighbour spacing, so the
 defaults work for any model size. The Delaunay tetrahedralisation is cached,
@@ -148,6 +150,25 @@ the original mesh):
 | Poisson, depth 8 | 0.36% | 0.91 | 4 | 5.0 s |
 | Ball Pivoting, ×2 | 0.25% | 0.95 | 4 | 2.6 s |
 | Alpha Shape, ×10 | 0.29% | 0.94 | 1813 | 3.2 s |
+
+The two implicit methods evaluate their function only in a thin band of
+grid cells around the points (cell = 1.5 × spacing) and extract the zero
+level with `vtkExtractSurface`, which never closes a surface against an
+empty cell; pieces smaller than 1 % of the largest are removed.
+Measured on the bunny after preprocessing, against the original mesh
+(with 0.5 % Gaussian noise in brackets):
+
+| Algorithm | Chamfer | F-score | Pieces | Time |
+|---|---|---|---|---|
+| Poisson, depth 8 | 0.42% (0.50%) | 0.89 (0.89) | 1 (537) | 4 s |
+| Ball Pivoting, ×2 | 0.51% (0.83%) | 0.86 (0.85) | 4 (844) | 2 s (9 s) |
+| RIMLS, ×6 | 0.43% (0.59%) | 0.89 (0.88) | 2 (2) | 11 s (19 s) |
+| Signed Distance, ×5 | 0.44% (0.53%) | 0.89 (0.89) | 2 (2) | 4 s (6 s) |
+
+Poisson stays the most accurate; on noisy data Signed Distance is nearly as
+accurate and gives one clean surface instead of hundreds of pieces. Hoppe
+1992 (`vtkSurfaceReconstructionFilter`) was tried as well: same quality,
+150 s, so it was left out.
 
 ### Quality evaluation (📊 Quality Report)
 

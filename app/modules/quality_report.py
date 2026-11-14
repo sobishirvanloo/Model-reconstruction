@@ -48,6 +48,8 @@ ALGORITHM_NAMES = {
     "poisson": "Poisson",
     "ball_pivoting": "Ball Pivoting",
     "alpha_shape": "Alpha Shape",
+    "rimls": "RIMLS",
+    "signed_distance": "Signed Distance",
 }
 
 # (column title, function(record) -> display value)

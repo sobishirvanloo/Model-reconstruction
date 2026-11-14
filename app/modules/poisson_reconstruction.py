@@ -60,6 +60,10 @@ from modules.point_data import (
     insert_widget,
     make_scrollable,
 )
+from modules.implicit_reconstruction import (
+    reconstruct_rimls as _rimls,
+    reconstruct_signed_distance as _signed_distance,
+)
 from modules.quality_metrics import evaluate
 from modules.quality_report import (
     ALGORITHM_NAMES,
@@ -76,14 +80,21 @@ MESH_FILTER = "Meshes (*.stl *.obj *.ply *.off *.gltf *.glb)"
 POISSON = "poisson"
 BALL_PIVOTING = "ball_pivoting"
 ALPHA_SHAPE = "alpha_shape"
+RIMLS = "rimls"
+SIGNED_DISTANCE = "signed_distance"
 ALGORITHM_LABELS = ALGORITHM_NAMES   # display names, keyed by the ids above
 # Default size factors (x mean point spacing), chosen on the Stanford bunny:
-# BPA x1 was 7x slower with 48 pieces, x2 gave F 0.95; alpha x8-16 was best.
+# BPA x1 was 7x slower with 48 pieces, x2 gave F 0.95; alpha x8-16 was best;
+# RIMLS x6 beat x4 (Chamfer 0.43 vs 0.44 %, same time); signed distance
+# x5 beat x3 (0.44 vs 0.48 %, and 0.53 vs 0.71 % with 0.5 % noise).
 FACTOR_LABELS = {
     BALL_PIVOTING: "Ball radius (× point spacing)",
     ALPHA_SHAPE: "Alpha (× point spacing)",
+    RIMLS: "Kernel radius h (× point spacing)",
+    SIGNED_DISTANCE: "Influence radius (× point spacing)",
 }
-DEFAULT_FACTORS = {BALL_PIVOTING: 2.0, ALPHA_SHAPE: 10.0}
+DEFAULT_FACTORS = {BALL_PIVOTING: 2.0, ALPHA_SHAPE: 10.0, RIMLS: 6.0,
+                   SIGNED_DISTANCE: 5.0}
 
 
 class ReconstructionWorker(QThread):
@@ -294,10 +305,26 @@ def reconstruct_alpha_shape(pcd, params):
                   "setting": f"α = {alpha:.4g} (×{params['factor']:g})"}
 
 
+def reconstruct_rimls(pcd, params):
+    """Robust implicit MLS (see ``implicit_reconstruction``)."""
+    spacing = mean_spacing(pcd)
+    return _rimls(np.asarray(pcd.points), np.asarray(pcd.normals),
+                  spacing, params["factor"])
+
+
+def reconstruct_signed_distance(pcd, params):
+    """Volumetric signed distance (see ``implicit_reconstruction``)."""
+    spacing = mean_spacing(pcd)
+    return _signed_distance(np.asarray(pcd.points), np.asarray(pcd.normals),
+                            spacing, params["factor"])
+
+
 RECONSTRUCTORS = {
     POISSON: reconstruct_poisson,
     BALL_PIVOTING: reconstruct_ball_pivoting,
     ALPHA_SHAPE: reconstruct_alpha_shape,
+    RIMLS: reconstruct_rimls,
+    SIGNED_DISTANCE: reconstruct_signed_distance,
 }
 
 
@@ -335,6 +362,8 @@ def build_mesh(params, points, normals, reference=None, run_evaluation=False):
             POISSON: "lower the density filter or disable cropping",
             BALL_PIVOTING: "increase the ball radius factor",
             ALPHA_SHAPE: "increase the alpha factor",
+            RIMLS: "increase the kernel radius",
+            SIGNED_DISTANCE: "increase the influence radius",
         }[algorithm]
         raise ValueError(f"Reconstruction produced an empty mesh - {hint}")
 
@@ -402,9 +431,14 @@ def run_sweep(points, normals, reference, base_params, factors, kind, levels,
 
 
 PARAMETER_TIPS = {
-    "combo_algorithm": "Poisson: smooth closed surface, robust to noise.\n"
+    "combo_algorithm": "Poisson: smooth closed surface, robust to noise "
+                       "- the most accurate overall.\n"
                        "Ball Pivoting: passes exactly through the points.\n"
-                       "Alpha Shape: fastest, but many small pieces.",
+                       "Alpha Shape: fastest, but many small pieces.\n"
+                       "RIMLS: robust moving least squares - keeps sharp "
+                       "features, ignores outliers (≈ 10 s).\n"
+                       "Signed Distance: fast volumetric method, the best "
+                       "choice for noisy data (no debris).",
     "spinBox_depth": "Octree depth: higher = more detail, slower (8–10 typical)",
     "doubleSpinBox_width": "Finest octree cell size. 0 = use Depth; "
                            "a value > 0 overrides Depth.",
