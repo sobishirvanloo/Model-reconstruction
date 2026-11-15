@@ -32,6 +32,8 @@ def cuda_available():
 
 def set_gpu_enabled(enabled):
     _state["enabled"] = bool(enabled)
+    # inherited by the helper process (``isolated``) when it starts
+    os.environ["MODELRECON_GPU"] = "1" if enabled else "0"
 
 
 def gpu_in_use():

@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
             for timer in ("_live_timer", "_voxel_timer", "_checkpoint_timer"):
                 if getattr(tab, timer, None) is not None:
                     getattr(tab, timer).stop()
+        isolated.abort()                  # a running library call ends now
         for tab in self.tabs:
             worker = getattr(tab, "_worker", None)
             if worker is not None and worker.isRunning():
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
     def toggle_gpu(self, enabled):
         settings.set_use_gpu(enabled)
         compute.set_gpu_enabled(enabled)
+        isolated.run_if_started("gpu", bool(enabled))
         self.show_message(f"Computations run on: {compute.device_name()}")
 
     def show_mouse_guide(self, visible):

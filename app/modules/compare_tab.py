@@ -55,13 +55,14 @@ from modules.comparison_metrics import (
     ORDER,
     STAT_NAMES,
     Model,
-    run_comparison,
+    run_comparison_isolated,
 )
 from modules.geometry_utils import apply_transform, polydata_from_numpy
 from modules.import_mesh import Geometry
 from modules.point_data import add_section, insert_widget, make_scrollable
 from modules.poisson_reconstruction import ReconstructionWorker
 from modules.theme import PALETTES
+from modules.view_settings import ColorButton
 from modules.vtk_controls import TabMixin, VTKViewport
 
 OPEN_FILTER = "3D files (*.ply *.obj *.stl *.pcd *.off *.gltf *.glb);;All files (*)"
@@ -222,6 +223,32 @@ class DistributionChart(QWidget):
 # =========================
 # Tab 4
 # =========================
+MODEL_COLOUR_DEFAULTS = {
+    "compared": None,            # None = theme colour / Object settings
+    "reference": None,
+    "reference_opacity": 28,     # %
+    "error_colours": True,       # heatmap on the reconstruction
+}
+
+
+def load_model_colours():
+    """Saved colours of the two Compare models (unknown keys dropped)."""
+    saved = settings.view_settings("compare")
+    colours = dict(MODEL_COLOUR_DEFAULTS)
+    for key in colours:
+        if key in saved:
+            colours[key] = saved[key]
+    for key in ("compared", "reference"):
+        if colours[key] is not None and not QColor(str(colours[key])).isValid():
+            colours[key] = None
+    try:
+        colours["reference_opacity"] = min(100, max(5, int(colours["reference_opacity"])))
+    except (TypeError, ValueError):
+        colours["reference_opacity"] = MODEL_COLOUR_DEFAULTS["reference_opacity"]
+    colours["error_colours"] = bool(colours["error_colours"])
+    return colours
+
+
 class Compare(TabMixin):
     """Compare a *compared* model (reconstruction) with a *reference*."""
 
@@ -240,6 +267,7 @@ class Compare(TabMixin):
         self._grid_labels = []
         self._scalar_bar = None
         self._legend_renderer = None
+        self.model_colours = load_model_colours()
         self.init_rotation_state()
 
         self._build_page()
@@ -252,6 +280,7 @@ class Compare(TabMixin):
         self._build_results()
         self.setup_rotation_controls()
         self._build_sections()
+        self._refresh_colour_buttons()
         make_scrollable(self.btn_export.parentWidget())
         self._set_controls_enabled()
         self.console.appendPlainText(
@@ -409,6 +438,41 @@ class Compare(TabMixin):
         row.addWidget(self.spin_colour_max, 1)
         layout.addLayout(row)
 
+        # Colours of the two models
+        colours = self.model_colours
+        self.label_colours = QLabel("Reconstruction (compared)", panel)
+        layout.addWidget(self.label_colours)
+        self.btn_color_compared = ColorButton(
+            colours["compared"] or "#ffffff", panel)
+        self.btn_color_compared.setToolTip(
+            "Colour of the reconstruction (shown when it is not coloured by "
+            "its error)")
+        layout.addWidget(self.btn_color_compared)
+        layout.addWidget(QLabel("Reference (original)", panel))
+        self.btn_color_reference = ColorButton(
+            colours["reference"] or "#ffffff", panel)
+        self.btn_color_reference.setToolTip("Colour of the reference mesh")
+        layout.addWidget(self.btn_color_reference)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Reference opacity", panel))
+        self.spin_ref_opacity = QSpinBox(panel)
+        self.spin_ref_opacity.setRange(5, 100)
+        self.spin_ref_opacity.setSuffix(" %")
+        self.spin_ref_opacity.setValue(colours["reference_opacity"])
+        self.spin_ref_opacity.setToolTip(
+            "Opacity of the reference drawn over the reconstruction")
+        row.addWidget(self.spin_ref_opacity, 1)
+        layout.addLayout(row)
+        self.check_error_colours = QCheckBox(
+            "Colour the reconstruction by its error", panel)
+        self.check_error_colours.setChecked(colours["error_colours"])
+        self.check_error_colours.setToolTip(
+            "Off: both models keep their own colours after a comparison")
+        layout.addWidget(self.check_error_colours)
+        self.btn_default_colours = button(
+            "Default colours", QStyle.SP_BrowserReload,
+            "Theme colours, reference 28 % opaque, error colours on")
+
         # Output
         self.btn_export = button("Export results (CSV)…", QStyle.SP_DialogSaveButton,
                                  "Save the error table (Ctrl+S)")
@@ -429,12 +493,22 @@ class Compare(TabMixin):
         self.check_overlay.toggled.connect(self._render)
         self.check_signed.toggled.connect(self._display_changed)
         self.spin_colour_max.valueChanged.connect(self._display_changed)
+        self.btn_color_compared.changed.connect(
+            lambda c: self._set_model_colour("compared", c))
+        self.btn_color_reference.changed.connect(
+            lambda c: self._set_model_colour("reference", c))
+        self.spin_ref_opacity.valueChanged.connect(
+            lambda v: self._set_model_colour("reference_opacity", v))
+        self.check_error_colours.toggled.connect(
+            lambda on: self._set_model_colour("error_colours", on))
+        self.btn_default_colours.clicked.connect(self.default_model_colours)
 
     def _build_sections(self):
         add_section(self.label_compared, "Models")
         add_section(self.label_x, "Rotation")
         add_section(self.method_checks[ORDER[0]], "Comparison methods")
         add_section(self.label_display, "Display")
+        add_section(self.label_colours, "Colours")
         add_section(self.btn_export, "Output")
         self.label_display.hide()
         self.add_remove_button(self.btn_from_import)
@@ -684,7 +758,8 @@ class Compare(TabMixin):
             f"({params['samples']:,} samples per surface)…")
 
         def job(progress):
-            result = run_comparison(compared, reference, methods, params, progress)
+            result = run_comparison_isolated(compared, reference, methods,
+                                             params, progress)
             result["generation"] = generation
             return result
 
@@ -889,10 +964,60 @@ class Compare(TabMixin):
         mapper.SetResolveCoincidentTopologyToPolygonOffset()
         mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(4, 40)
         prop = actor.GetProperty()
-        prop.SetColor(*self.viewport.color("points"))
-        prop.SetOpacity(0.28)
+        prop.SetColor(*self._model_rgb("reference"))
+        prop.SetOpacity(self.model_colours["reference_opacity"] / 100.0)
         actor.SetPickable(False)
         return actor
+
+    # ---------- colours of the two models ----------
+    def _model_rgb(self, which):
+        """RGB (0..1) of ``which`` model: the chosen colour, else the
+        theme colour (reference = the overlay colour it always had)."""
+        colour = self.model_colours[which]
+        if colour:
+            return QColor(colour).getRgbF()[:3]
+        return self.viewport.color("mesh" if which == "compared" else "points")
+
+    def _apply_main_colour(self, model, coloured):
+        """Solid colour of the main actor (not when it shows the error);
+        ``None`` keeps the Object settings / file colours."""
+        if self.actor is None or coloured:
+            return
+        which = "compared" if model is self.compared else "reference"
+        if self.model_colours[which]:
+            self.actor.GetMapper().ScalarVisibilityOff()
+            self.actor.GetProperty().SetColor(*self._model_rgb(which))
+
+    def _refresh_colour_buttons(self):
+        for which, button in (("compared", self.btn_color_compared),
+                              ("reference", self.btn_color_reference)):
+            button.blockSignals(True)
+            button.set_color(QColor.fromRgbF(*self._model_rgb(which)).name())
+            button.setText(button.color() if self.model_colours[which]
+                           else f"{button.color()} (theme)")
+            button.blockSignals(False)
+
+    def _set_model_colour(self, key, value):
+        self.model_colours[key] = value
+        settings.set_view_settings("compare", self.model_colours)
+        self._refresh_colour_buttons()
+        if self.compared is not None or self.reference is not None:
+            self._render()
+
+    def default_model_colours(self):
+        self.model_colours = dict(MODEL_COLOUR_DEFAULTS)
+        settings.set_view_settings("compare", self.model_colours)
+        for widget, value in ((self.spin_ref_opacity,
+                               self.model_colours["reference_opacity"]),
+                              (self.check_error_colours,
+                               self.model_colours["error_colours"])):
+            widget.blockSignals(True)
+            (widget.setValue if widget is self.spin_ref_opacity
+             else widget.setChecked)(value)
+            widget.blockSignals(False)
+        self._refresh_colour_buttons()
+        if self.compared is not None or self.reference is not None:
+            self._render()
 
     def _render(self, *_, reset_camera=False):
         """Rebuild the view from the models, results and display options."""
@@ -913,6 +1038,8 @@ class Compare(TabMixin):
             return
 
         computed = self.computed() if self.compared is not None else []
+        if not self.model_colours["error_colours"]:
+            computed = []                 # both models in their own colours
         signed = self.check_signed.isChecked()
         grid = self.combo_mode.currentData() == "grid" and len(computed) > 1
         key = self.combo_method.currentData()
@@ -926,6 +1053,7 @@ class Compare(TabMixin):
         actor = self._model_actor(main_model, values, lut)
         self.show_actor(actor, reset_camera=reset_camera or self.actor is None,
                         kind="mesh" if main_model.has_triangles else "points")
+        self._apply_main_colour(main_model, values is not None)
         if self.compared is not None and self.reference is not None \
                 and self.check_overlay.isChecked():
             self.ref_actor = self._reference_overlay()
@@ -1071,11 +1199,17 @@ class Compare(TabMixin):
 
     def refresh_theme(self):
         """Theme switched: grid backgrounds, legend and chart follow."""
+        self._refresh_colour_buttons()
         if self.compared is not None or self.reference is not None:
             self._render()
         self.chart.update()
 
     def view_settings_changed(self, kind):
+        if self.actor is not None:          # Object settings restyled it
+            main_model = self.compared or self.reference
+            scalars = self.actor.GetMapper().GetInput().GetPointData().GetScalars()
+            self._apply_main_colour(
+                main_model, scalars is not None and scalars.GetName() == "Error")
         if self._grid or self._legend_renderer:
             self._sync_backgrounds()
             self.viewport.render()

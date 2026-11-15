@@ -98,6 +98,7 @@ def install():
         path = os.path.join(log_folder(), "crash.log")
         _trim(path)
         _state["crash_file"] = open(path, "a", encoding="utf-8")
+        os.environ["MODELRECON_CRASH_LOG"] = path    # the helper logs here too
         faulthandler.enable(_state["crash_file"], all_threads=True)
     except OSError:
         faulthandler.enable()

@@ -482,6 +482,55 @@ def to_vertices(values, points, vertices, cache=None):
 # =========================
 # Run
 # =========================
+def _prepare(compared, reference, params):
+    """Shared state of one comparison: both models moved near the origin
+    (the float32 KD-tree / BVH lose precision with large coordinates;
+    results are moved back) and the lazily built samples / indices."""
+    origin = reference.vertices.mean(axis=0)
+    compared_local = compared.translated(-origin)
+    reference_local = reference.translated(-origin)
+    return {"origin": origin, "compared": compared_local,
+            "reference": reference_local,
+            "ctx": _Context(compared_local, reference_local, params),
+            "vertex_cache": {}}
+
+
+def _run_method(state, key):
+    """One method -> its result entry (positions in the input coordinates)."""
+    compared, reference = state["compared"], state["reference"]
+    if key in MESH_METHODS and not reference.has_triangles:
+        return {"skipped": "the reference has no triangles"}
+    started = time.perf_counter()
+    output = FUNCTIONS[key](state["ctx"])
+    values, points, matched = output[:3]
+    extra = output[3] if len(output) > 3 else {}
+    return {
+        "values": values,
+        "points": points + state["origin"],
+        "matched": matched + state["origin"],
+        "vertex_values": to_vertices(values, points, compared.vertices,
+                                     state["vertex_cache"]),
+        "stats": error_stats(values, matched),
+        "signed": METHODS[key][1],
+        "extra": extra,
+        "time": time.perf_counter() - started,
+    }
+
+
+def _finish(results, compared, reference, params):
+    diagonal = max(compared.diagonal, reference.diagonal)
+    warnings = []
+    reference_result = results.get("p2m") or results.get("c2c") or results.get("p2p")
+    if reference_result and "stats" in reference_result:
+        median = reference_result["stats"]["median"]
+        if median > 0.02 * diagonal:
+            warnings.append(
+                f"The models may not be aligned: median distance "
+                f"{median:.4g} is {median / diagonal:.0%} of the diagonal.")
+    return {"results": results, "params": params, "diagonal": diagonal,
+            "warnings": warnings}
+
+
 def run_comparison(compared, reference, methods=ORDER, params=None,
                    progress=None, cancel=None):
     """Run ``methods`` and return::
@@ -495,51 +544,75 @@ def run_comparison(compared, reference, methods=ORDER, params=None,
     has only ``skipped`` (the reason).
     """
     params = dict(DEFAULT_PARAMS, **(params or {}))
-    # Work near the origin: the float32 KD-tree / BVH lose precision with
-    # large coordinates (results are moved back at the end)
-    origin = reference.vertices.mean(axis=0)
-    original_compared = compared
-    compared, reference = compared.translated(-origin), reference.translated(-origin)
-    ctx = _Context(compared, reference, params)
+    state = _prepare(compared, reference, params)
     results = {}
-    vertex_cache = {}
+    for number, key in enumerate(methods, 1):
+        if cancel is not None and cancel.is_set():
+            break
+        results[key] = _run_method(state, key)
+        if progress is not None and "skipped" not in results[key]:
+            progress((number, len(methods), key))
+    return _finish(results, compared, reference, params)
+
+
+# =========================
+# In the helper process (see ``isolated``): Open3D holds the GIL during
+# its searches, which froze the window while comparing
+# =========================
+def _model_arrays(model):
+    return (model.vertices, model.triangles, model.normals, model.name)
+
+
+def _key(arrays, params):
+    import hashlib
+    digest = hashlib.blake2b(digest_size=16)
+    for array in arrays:
+        if array is not None and not isinstance(array, str):
+            digest.update(np.ascontiguousarray(array).tobytes())
+    digest.update(repr(sorted(params.items())).encode())
+    return digest.hexdigest()
+
+
+_job_state = {"key": None}
+
+
+def compare_job(compared_arrays, reference_arrays, key, params):
+    """One method in the helper; the models, samples and indices are kept
+    for the next method of the same run."""
+    cache_key = _key(compared_arrays + reference_arrays, params)
+    if _job_state["key"] != cache_key:
+        _job_state.clear()
+        _job_state["key"] = None
+        compared = Model(*compared_arrays[:3], name=compared_arrays[3])
+        reference = Model(*reference_arrays[:3], name=reference_arrays[3])
+        _job_state.update(state=_prepare(compared, reference, params),
+                          key=cache_key)
+    return _run_method(_job_state["state"], key)
+
+
+def run_comparison_isolated(compared, reference, methods=ORDER, params=None,
+                            progress=None, cancel=None):
+    """``run_comparison`` with the work in the helper process (one call
+    per method, so progress and cancelling still work)."""
+    from modules import isolated
+    params = dict(DEFAULT_PARAMS, **(params or {}))
+    compared_arrays = _model_arrays(compared)
+    reference_arrays = _model_arrays(reference)
+    results = {}
     for number, key in enumerate(methods, 1):
         if cancel is not None and cancel.is_set():
             break
         if key in MESH_METHODS and not reference.has_triangles:
             results[key] = {"skipped": "the reference has no triangles"}
             continue
-        started = time.perf_counter()
-        output = FUNCTIONS[key](ctx)
-        values, points, matched = output[:3]
-        extra = output[3] if len(output) > 3 else {}
-        results[key] = {
-            "values": values,
-            "points": points,
-            "matched": matched,
-            "vertex_values": to_vertices(values, points, compared.vertices,
-                                         vertex_cache),
-            "stats": error_stats(values, matched),
-            "signed": METHODS[key][1],
-            "extra": extra,
-            "time": time.perf_counter() - started,
-        }
+        results[key] = isolated.run("compare", compared_arrays,
+                                    reference_arrays, key, params)
         if progress is not None:
             progress((number, len(methods), key))
+    isolated.run_if_started("compare_clear")
+    return _finish(results, compared, reference, params)
 
-    for item in results.values():
-        if "points" in item:
-            item["points"] = item["points"] + origin
-            item["matched"] = item["matched"] + origin
-    compared = original_compared
-    diagonal = max(compared.diagonal, reference.diagonal)
-    warnings = []
-    reference_result = results.get("p2m") or results.get("c2c") or results.get("p2p")
-    if reference_result and "stats" in reference_result:
-        median = reference_result["stats"]["median"]
-        if median > 0.02 * diagonal:
-            warnings.append(
-                f"The models may not be aligned: median distance "
-                f"{median:.4g} is {median / diagonal:.0%} of the diagonal.")
-    return {"results": results, "params": params, "diagonal": diagonal,
-            "warnings": warnings}
+
+def compare_clear_job():
+    _job_state.clear()
+    _job_state["key"] = None

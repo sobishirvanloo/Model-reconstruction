@@ -84,6 +84,12 @@ can be overlaid translucent; |e| or signed colours; colour max = P95 or
 your value. Export the table as CSV or copy it as Markdown; the
 screenshot button saves the whole grid (every method, titles and legend).
 
+**Colours** (tab 4): the reconstruction and the reference each get their
+own colour (theme colours by default), the reference's opacity is
+adjustable, and *Colour the reconstruction by its error* can be switched
+off to keep both models in their own colours after a comparison;
+*Default colours* resets them. The choice is remembered.
+
 ### User interface
 
 * **Light theme by default, dark theme** with *View ▸ Dark Theme* (Ctrl+T);
@@ -284,12 +290,24 @@ or mouse) is applied to exported and sent points, normals and meshes.
   *Help ▸ About*; logs are capped at 2 MB).
 * **Safe exit** — closing the window cancels sweeps / optimisations and
   waits for running jobs before the OpenGL windows are released.
-* **Open3D's Poisson in a helper process** — Open3D's Poisson
-  reconstruction occasionally segfaults inside the library, which cannot
-  be caught and used to close the program. It now runs in a long-lived
-  helper process (`modules/isolated.py`, started in the background at
-  launch): if it crashes, only the helper dies, a new one starts and the
-  run is retried once.
+* **All reconstruction work in a helper process** — Open3D keeps
+  Python's global lock (GIL) during its C++ calls, so the window froze for
+  up to 4.5 s per reconstruction even on a background thread (most of an
+  optimisation run), and it occasionally crashes or never returns inside
+  the library (Ball Pivoting with a large radius on noisy data ran for over
+  30 minutes). The whole pipeline - preprocessing, the five algorithms,
+  quality evaluation (`modules/pipeline.py`) and the seven comparison
+  methods - now runs in a long-lived helper process (`modules/isolated.py`,
+  started in the background at launch). The window stays fluid (longest
+  stall while optimising: 0.08 s); if the library crashes only the helper
+  dies, a new one starts and the run is retried once.
+* **Time limits and instant cancel** — an optimisation run that takes far
+  longer than the slowest one so far (6 ×, at least 90 s; 10 min for the
+  first) is stopped and listed as "too slow", and the search goes on; sweep
+  runs stop after 15 min. *Cancel* and closing the window stop the running
+  library call at once (the helper is ended and restarted for the next
+  job). Changing a parameter while a build of the old ones has run for
+  more than 8 s stops that build and starts the new one.
 * **GPU** — rendering always runs on the graphics card (VTK / OpenGL);
   nearest-neighbour searches (comparison, quality metrics, RIMLS, colours,
   object info) run on an NVIDIA GPU when Open3D has CUDA (*View ▸ Use GPU

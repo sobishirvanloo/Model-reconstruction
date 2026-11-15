@@ -869,6 +869,25 @@ KD-tree، BVH و بیشتر کدهای GPU در float32 کار می‌کنند. 
 
 با یک SIGSEGV واقعی آزمایش شد: کمکی با کد −۱۱ خارج شد، برنامه زنده ماند و درخواست بدون اطلاع کاربر دوباره انجام شد. هزینه‌ی این روش کپی آرایه‌ها روی pipe است؛ در برابر زمان خود Poisson ناچیز است.
 
+**به‌روزرسانی: کل خط لوله در پروسه‌ی کمکی.** دو مشکل باعث شد کل بازسازی، ارزیابی و مقایسه هم به پروسه‌ی کمکی منتقل شوند:
+
+- **قفل GIL:** Open3D هنگام اجرای کد C++ قفل سراسری پایتون (GIL) را نگه می‌دارد. برای همین با اینکه کار در یک QThread بود، پنجره در هر بازسازی تا ۴.۵ ثانیه قفل می‌شد. در یک بهینه‌سازی این حدود ۶۰ تا ۹۰ درصد زمان بود.
+- **گیر کردن Ball Pivoting:** این الگوریتم با شعاع بزرگ روی داده‌ی نویزی بیش از ۳۰ دقیقه بدون پایان اجرا شد.
+
+کد محاسباتی بدون Qt حالا در `pipeline.py` است. `build_mesh` و `evaluate_mesh` کار را با `isolated.run` به کمکی می‌فرستند و نسخه‌های `*_local` کار را همان‌جا انجام می‌دهند. مقایسه‌ی تب ۴ هم برای هر روش یک فراخوانی جدا دارد (`run_comparison_isolated`)؛ کمکی نمونه‌ها و KD-treeها را بین روش‌ها نگه می‌دارد و نتایج دقیقاً با اجرای داخلی یکسان است.
+
+`run` دو پارامتر `timeout` و `cancel` دارد. حلقه‌ی بومی را نمی‌شود از بیرون قطع کرد، پس در این دو حالت پروسه‌ی کمکی بسته می‌شود و `TooSlow` یا `Stopped` پرتاب می‌شود. کار بعدی یک کمکی تازه راه می‌اندازد.
+
+| جایی که استفاده می‌شود | سقف زمانی |
+| --- | --- |
+| هر اجرای بهینه‌ساز (`optimizer.run_limit`) | ۶ برابر کندترین اجرای موفق، حداقل ۹۰ ثانیه؛ اولین اجرا ۶۰۰ ثانیه |
+| هر اجرای sweep | ۹۰۰ ثانیه |
+| بازسازی زنده‌ی تب ۳ | سقف ندارد؛ اگر کاربر وسط آن پارامتر را عوض کند و بیش از ۸ ثانیه گذشته باشد، متوقف می‌شود |
+
+دکمه‌ی Cancel و بستن برنامه (`isolated.abort`) کار در حال اجرا را فوراً متوقف می‌کنند. کارهای کوچک مثل پاک کردن کش یا روشن و خاموش کردن GPU با `run_if_started` فرستاده می‌شوند؛ این تابع هیچ‌وقت thread رابط کاربری را منتظر نگه نمی‌دارد و اگر کمکی مشغول باشد، کار را در صف می‌گذارد. کرش‌های بومی کمکی هم در همان `crash.log` نوشته می‌شوند.
+
+نتیجه‌ی اندازه‌گیری: طولانی‌ترین مکث رابط کاربری در کل یک بهینه‌سازی با هر پنج الگوریتم ۰.۰۸ ثانیه بود. Cancel روی Ball Pivoting گیرکرده در ۰.۰۷ ثانیه اثر کرد.
+
 ### ۱۱.۴ Hookهای خطا و logها (`safety.py`)
 
 - **استثنای پایتون در یک slot**: PyQt5 در این حالت کل برنامه را abort می‌کند (core dump). `install()` هم `sys.excepthook` و هم `threading.excepthook` را جایگزین می‌کند: traceback در `errors.log` نوشته می‌شود و یک دیالوگ با `QTimer.singleShot(0, …)` از حلقه‌ی رویداد نمایش داده می‌شود، نه از داخل slot خراب. پرچم `dialog_open` جلوی باز شدن رگبار دیالوگ را می‌گیرد. KeyboardInterrupt و SystemExit مسیر عادی خود را می‌روند.
@@ -944,7 +963,8 @@ KD-tree، BVH و بیشتر کدهای GPU در float32 کار می‌کنند. 
 | `geometry_utils.py` (۱۸۹) | ابزارهای مشترک | `load_array`، `normalize`، `bbox_diagonal`، `estimate_oriented_normals`، `orient_consistently`، `apply_transform`، `polydata_from_numpy`، `transfer_colors` |
 | `point_data.py` (۳۱۸) | ظرف داده + ابزارهای چیدمان | `PointCloudData` (`load`، `save`، `transformed`، `with_normals`)، `ask_open_point_cloud`، `insert_widget`، `add_section`، `make_scrollable` |
 | `compute.py` (۱۷۰) | GPU و حافظه | `KNN` (`knn`، `radius`)، `available_memory`، `cuda_available`، `set_gpu_enabled`، `device_name`، `centred` |
-| `isolated.py` (۱۶۶) | پروسه‌ی کمکی | `serve`، `run`، `poisson`، `warm_up`، `shutdown` |
+| `isolated.py` | پروسه‌ی کمکی | `serve`، `run` (`timeout`، `cancel`)، `run_if_started`، `abort`، `poisson`، `warm_up`، `shutdown`، `TooSlow`، `Stopped` |
+| `pipeline.py` | خط لوله‌ی بازسازی بدون Qt | `preprocess`، `cached_preprocess`، `reconstruct_*`، `build_mesh_local`، `evaluate_mesh_local`، `build_mesh`، `evaluate_mesh`، `build_job`، `evaluate_job` |
 
 ### ۱۲.۴ رابط کاربری و زیرساخت
 
@@ -998,8 +1018,8 @@ python main.py
 
 ### ۱۳.۲ افزودن یک الگوریتم بازسازی جدید
 
-1. در `poisson_reconstruction.py` یک شناسه تعریف کنید (مثل `MY_ALGO = "my_algo"`) و تابع `reconstruct_my_algo(pcd, params) -> (mesh, info)` بنویسید. `info` باید حداقل کلید `"setting"` را داشته باشد. اندازه‌ها را ضریبی از `mean_spacing(pcd)` بگیرید.
-2. آن را به `RECONSTRUCTORS`، `FACTOR_LABELS`، `DEFAULT_FACTORS` و پیام راهنمای مش خالی در `build_mesh` اضافه کنید.
+1. در `pipeline.py` (که Qt ندارد و در پروسه‌ی کمکی اجرا می‌شود) یک شناسه تعریف کنید (مثل `MY_ALGO = "my_algo"`) و تابع `reconstruct_my_algo(pcd, params) -> (mesh, info)` بنویسید. `info` باید حداقل کلید `"setting"` را داشته باشد. اندازه‌ها را ضریبی از `mean_spacing(pcd)` بگیرید.
+2. آن را به `RECONSTRUCTORS` و `DEFAULT_FACTORS` و پیام راهنمای مش خالی در `build_mesh_local` (هر سه در `pipeline.py`) و به `FACTOR_LABELS` در `poisson_reconstruction.py` اضافه کنید.
 3. نام نمایشی را در `ALGORITHM_NAMES` (`quality_report.py`) بگذارید.
 4. فضای جستجویش را در `SPACES` (`optimizer.py`) تعریف کنید تا بهینه‌ساز و sweep هم آن را پوشش دهند.
 5. اگر کد native ناپایدار است، آن را مثل Poisson به `JOBS` در `isolated.py` اضافه کنید. ورودی و خروجی باید pickle‌شدنی باشند (آرایه‌ی NumPy، نه شیء Open3D).

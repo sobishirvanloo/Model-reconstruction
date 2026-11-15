@@ -33,6 +33,7 @@ one data set).
 
 import time
 
+from modules import isolated
 from modules.degradation import Degradation
 from modules.poisson_reconstruction import (
     ALPHA_SHAPE,
@@ -69,6 +70,21 @@ SPACES = {
 }
 MAX_PASSES = 4
 VALIDATION_NOISE_PCT = 0.25
+# A run is stopped when it takes far longer than the slowest one so far
+# (Ball Pivoting with a large radius on noisy data ran for > 30 min - the
+# window froze and looked crashed); the first run of each algorithm gets
+# FIRST_RUN_LIMIT.
+FIRST_RUN_LIMIT = 600.0
+RUN_LIMIT_FACTOR = 6.0
+MIN_RUN_LIMIT = 90.0
+
+
+def run_limit(trials):
+    """Time limit (s) for the next run, from the runs that worked."""
+    times = [t["time"] for t in trials if "metrics" in t]
+    if not times:
+        return FIRST_RUN_LIMIT
+    return max(MIN_RUN_LIMIT, RUN_LIMIT_FACTOR * max(times))
 
 
 def objective_value(metrics, objective):
@@ -167,10 +183,14 @@ def optimize_algorithm(points, normals, reference, base_params, algorithm,
         trial = {"algorithm": algorithm, "values": dict(values)}
         try:
             result = build_mesh(dict(params, **values), points, normals,
-                                reference, run_evaluation=True)
+                                reference, run_evaluation=True,
+                                timeout=run_limit(trials), cancel=cancel,
+                                keep_mesh=False)
             trial["metrics"] = summarise(result["metrics"])
             trial["setting"] = result["setting"]
-        except Exception as e:                      # e.g. an empty mesh
+        except isolated.Stopped:                    # cancelled: not a result
+            return None
+        except Exception as e:                      # e.g. an empty mesh, too slow
             trial["error"] = str(e)
             trial["setting"] = describe_values(algorithm, values)
         trial["time"] = time.perf_counter() - started
@@ -214,7 +234,8 @@ def optimize_algorithm(points, normals, reference, base_params, algorithm,
             "initial": initial}
 
 
-def validate(points, normals, reference, base_params, results, noise_pct):
+def validate(points, normals, reference, base_params, results, noise_pct,
+             cancel=None):
     """Re-run the starting and the best settings on a noisy copy."""
     noisy_points, noisy_normals = Degradation(
         noise_pct=noise_pct, seed=1).apply(points, normals)
@@ -228,9 +249,13 @@ def validate(points, normals, reference, base_params, results, noise_pct):
                 continue
             params = dict(base_params, algorithm=algorithm, width=0.0,
                           **trial["values"])
+            if cancel is not None and cancel.is_set():
+                break
             try:
                 built = build_mesh(params, noisy_points, noisy_normals,
-                                   reference, run_evaluation=True)
+                                   reference, run_evaluation=True,
+                                   timeout=run_limit(result["trials"]),
+                                   cancel=cancel, keep_mesh=False)
                 row[label] = summarise(built["metrics"])
             except Exception as e:
                 row[label] = {"error": str(e)}
@@ -256,7 +281,7 @@ def run_optimization(points, normals, reference, base_params, algorithms,
     validation = None
     if validate_noise > 0 and results and not (cancel and cancel.is_set()):
         validation = validate(points, normals, reference, base_params,
-                              results, validate_noise)
+                              results, validate_noise, cancel)
     return {"results": results, "best": best, "objective": objective,
             "min_recall": min_recall, "validation": validation,
             "cancelled": bool(cancel and cancel.is_set())}
