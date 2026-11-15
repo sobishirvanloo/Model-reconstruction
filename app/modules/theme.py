@@ -184,6 +184,12 @@ QLabel[role="section"] {{
     letter-spacing: 1px; padding: 10px 0 2px 0;
     border-bottom: 1px solid {p['border']}; }}
 QLabel[role="section"]:hover {{ color: {p['text']}; }}
+QFrame#welcome {{ background-color: {p['surface']}; }}
+QFrame#welcomeCard {{
+    background-color: {p['surface_alt']}; border: 1px solid {p['border']};
+    border-radius: 10px; }}
+QLabel[role="welcome_title"] {{ color: {p['text']}; font-size: 22px; font-weight: bold; }}
+QLabel[role="welcome_step"] {{ color: {p['text']}; font-size: 14px; font-weight: bold; }}
 QFrame#poseBar {{
     background-color: {p['surface']}; border-top: 1px solid {p['border']}; }}
 QFrame#poseBar QLabel[role="posebar"] {{ color: {p['text_muted']}; font-size: 11px; font-weight: bold; }}

@@ -66,6 +66,8 @@ class Geometry(TabMixin):
                        "or press Ctrl+O to open one\n\n"
                        "(File > Open Sample to try the Stanford bunny)",
         )
+        self.viewport.add_welcome(lambda: self.import_file(),
+                                  lambda: self.main_window.open_sample())
 
         # ---------- Connect buttons ----------
         self.btn_import.clicked.connect(lambda: self.import_file())

@@ -146,6 +146,16 @@ off to keep both models in their own colours after a comparison;
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.
+* **Persian interface** — *View ▸ Language ▸ فارسی* (restarts the
+  program): menus, buttons, labels, tooltips, dialogs, table headers and
+  the object info in Persian, laid out right to left; numbers, tables,
+  sliders and the log stay left to right, and technical names
+  (algorithms, methods, RMSE …) stay English (`modules/i18n.py`).
+* **Start screen** — while tab 1 is empty it shows the three steps
+  (open → reconstruct → compare) with *Try the sample bunny* and
+  *Open a file…* instead of an empty 3D view.
+* **Stop reconstruction** — tab 3's *Stop reconstruction* button (or Esc)
+  ends a running build at once; the last finished mesh stays.
 * **One zero for all tabs** — *Send to …* hands the data over in its own
   (file) coordinates together with the six rotation / position values, and
   the next tab shows it with the same values: a model at X = 10° in one tab

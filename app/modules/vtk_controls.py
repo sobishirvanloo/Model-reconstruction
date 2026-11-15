@@ -312,6 +312,89 @@ class PoseBar(QFrame):
         self.grid.addWidget(reset_button, row, column)
 
 
+class WelcomePanel(QFrame):
+    """Start screen shown instead of the 3D view while the first tab is
+    empty: the three steps of the work and the ways to begin."""
+
+    STEPS = (
+        ("open", "1  Open",
+         "A mesh (STL, OBJ, PLY …) or a point cloud. Its surface becomes "
+         "the ground truth."),
+        ("target", "2  Reconstruct",
+         "Clean the points, then build a surface with one of 5 algorithms "
+         "- or let the optimizer find the best settings."),
+        ("report", "3  Compare",
+         "Measure the reconstruction against the original: 7 distance "
+         "methods, error statistics and colour maps."),
+    )
+
+    def __init__(self, parent, open_file, open_sample):
+        super().__init__(parent)
+        self.setObjectName("welcome")
+        outer = QVBoxLayout(self)
+        outer.addStretch(2)
+        title = QLabel("Model Reconstruction", self)
+        title.setProperty("role", "welcome_title")
+        title.setAlignment(Qt.AlignCenter)
+        subtitle = QLabel("Rebuild a surface from a point cloud and measure "
+                          "how close it is to the original", self)
+        subtitle.setProperty("role", "hint")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setWordWrap(True)
+        outer.addWidget(title)
+        outer.addWidget(subtitle)
+        outer.addSpacing(22)
+        cards = QHBoxLayout()
+        cards.addStretch(1)
+        self.step_icons = []
+        for icon_name, heading, text in self.STEPS:
+            card = QFrame(self)
+            card.setObjectName("welcomeCard")
+            box = QVBoxLayout(card)
+            box.setContentsMargins(16, 14, 16, 14)
+            icon = QLabel(card)
+            self.step_icons.append((icon, icon_name))
+            name = QLabel(heading, card)
+            name.setProperty("role", "welcome_step")
+            body = QLabel(text, card)
+            body.setProperty("role", "hint")
+            body.setWordWrap(True)
+            for widget in (icon, name, body):
+                box.addWidget(widget)
+            box.addStretch(1)
+            card.setFixedWidth(250)
+            cards.addWidget(card)
+        cards.addStretch(1)
+        outer.addLayout(cards)
+        outer.addSpacing(22)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.btn_sample = QPushButton("Try the sample bunny", self)
+        self.btn_sample.setProperty("variant", "primary")
+        self.btn_sample.setIcon(icons.icon("play", "on_primary"))
+        self.btn_sample.setToolTip("Open the Stanford bunny (Ctrl+Shift+O)")
+        self.btn_sample.clicked.connect(open_sample)
+        self.btn_open = QPushButton("Open a file…", self)
+        self.btn_open.setIcon(icons.icon("open"))
+        self.btn_open.setToolTip("Open a mesh or point cloud (Ctrl+O)")
+        self.btn_open.clicked.connect(open_file)
+        for button in (self.btn_sample, self.btn_open):
+            button.setMinimumWidth(190)
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        outer.addLayout(buttons)
+        drop = QLabel("or drag a file onto the window", self)
+        drop.setProperty("role", "hint")
+        drop.setAlignment(Qt.AlignCenter)
+        outer.addWidget(drop)
+        outer.addStretch(3)
+        self.refresh_icons()
+
+    def refresh_icons(self):
+        for label, name in self.step_icons:
+            label.setPixmap(icons.icon(name, "primary").pixmap(28, 28))
+
+
 class VTKViewport:
     """Creates the console, camera toolbar and VTK render window of a tab.
 
@@ -873,6 +956,17 @@ class VTKViewport:
     # =========================
     def set_empty(self, empty):
         self.hint.SetVisibility(bool(empty))
+        welcome = getattr(self, "welcome", None)
+        if welcome is not None:            # start screen instead of the view
+            welcome.setVisible(bool(empty))
+            self.owner.vtk_widget.setVisible(not empty)
+
+    def add_welcome(self, open_file, open_sample):
+        """Show a start screen in place of the 3D view while it is empty."""
+        layout = self.owner.frame_view.layout()
+        self.welcome = WelcomePanel(self.owner.frame_view, open_file, open_sample)
+        layout.insertWidget(layout.indexOf(self.owner.vtk_widget), self.welcome, 1)
+        self.set_empty(getattr(self.owner, "actor", None) is None)
 
     def color(self, kind):
         """Theme colour for an actor kind ("mesh" / "points")."""
@@ -881,6 +975,8 @@ class VTKViewport:
     def apply_theme(self, name):
         self.theme = name
         self.mouse_guide.apply_theme(name)
+        if getattr(self, "welcome", None) is not None:
+            self.welcome.refresh_icons()
         # the toolbar keeps the drawn icon: give it a fresh one in the new colours
         for action, icon_name in getattr(self, "_themed_actions", ()):
             action.setIcon(icons.icon(icon_name))

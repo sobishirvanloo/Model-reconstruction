@@ -36,6 +36,7 @@ from PyQt5.QtWidgets import (
 )
 
 from modules.compute import KNN
+from modules.i18n import tr
 
 REFRESH_MS = 120          # live refresh while dragging
 BACKGROUND_SIZE = 50_000  # points + triangles above which stats run off the UI thread
@@ -301,7 +302,7 @@ class ObjectInfoPanel(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.tree.header().setStretchLastSection(True)
         layout.addWidget(self.tree)
-        self._collapsed = {"Object box": False}
+        self._collapsed = {tr("Object box"): False}
         self.set_sections(None)
 
     def set_sections(self, sections):
@@ -314,19 +315,19 @@ class ObjectInfoPanel(QWidget):
         self.tree.setUpdatesEnabled(False)
         self.tree.clear()
         if not sections:
-            QTreeWidgetItem(self.tree, ["No data loaded", ""])
+            QTreeWidgetItem(self.tree, [tr("No data loaded"), ""])
         else:
             for title, rows in sections:
-                parent = QTreeWidgetItem(self.tree, [title, ""])
+                parent = QTreeWidgetItem(self.tree, [tr(title), ""])
                 font = parent.font(0)
                 font.setBold(True)
                 parent.setFont(0, font)
                 parent.setFirstColumnSpanned(True)
                 for name, value, tip in rows:
-                    item = QTreeWidgetItem(parent, [name, value])
-                    item.setToolTip(0, tip)
-                    item.setToolTip(1, tip)
-                parent.setExpanded(not self._collapsed.get(title, False))
+                    item = QTreeWidgetItem(parent, [tr(name), tr(value)])
+                    item.setToolTip(0, tr(tip))
+                    item.setToolTip(1, tr(tip))
+                parent.setExpanded(not self._collapsed.get(tr(title), False))
         self.tree.setUpdatesEnabled(True)
         self.tree.verticalScrollBar().setValue(scroll)
 

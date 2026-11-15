@@ -16,7 +16,8 @@ from PyQt5.uic import loadUi
 
 import atexit
 
-from modules import compute, icons, isolated, safety, settings, theme
+from modules import compute, i18n, icons, isolated, safety, settings, theme
+from modules.i18n import tr
 from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
@@ -421,6 +422,13 @@ class MainWindow(QMainWindow):
                                         self.toggle_theme, "Ctrl+T")
         self.action_dark.setCheckable(True)
         self.action_dark.setChecked(self.theme_name == theme.DARK)
+        language_menu = view_menu.addMenu("Language")
+        for code, name in i18n.LANGUAGES.items():
+            action = language_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(code == settings.language())
+            action.setStatusTip("Restart the program in this language")
+            action.triggered.connect(lambda _=False, c=code: self.set_language(c))
         view_menu.addSeparator()
         self._action(view_menu, "&Quality Report", self.open_quality_report,
                      "Ctrl+R", QStyle.SP_FileDialogDetailedView)
@@ -468,23 +476,45 @@ class MainWindow(QMainWindow):
         self.show_tab(self.poisson)
         self.poisson.show_report()
 
+    def set_language(self, code):
+        """Save the language; it applies after a restart (offered now)."""
+        for action in self.sender().parent().actions() if self.sender() else ():
+            action.setChecked(action.text() == i18n.LANGUAGES[code])
+        if code == settings.language():
+            return
+        settings.set_language(code)
+        answer = QMessageBox.question(
+            self, i18n.LANGUAGES[code],
+            "The language changes when the program starts again.\n\n"
+            "Restart now?" if code == "en" else
+            "زبان بعد از اجرای دوباره‌ی برنامه عوض می‌شود.\n\n"
+            "همین حالا دوباره اجرا شود؟",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer == QMessageBox.Yes:
+            from PyQt5.QtCore import QProcess
+            if self.close():
+                QProcess.startDetached(sys.executable, sys.argv)
+
     def show_shortcuts(self):
-        rows = "".join(f"<tr><td><b>{keys}</b>&nbsp;&nbsp;</td><td>{what}</td></tr>"
-                       for keys, what in SHORTCUTS)
+        rows = "".join(
+            f"<tr><td><b>{tr(keys)}</b>&nbsp;&nbsp;</td><td>{tr(what)}</td></tr>"
+            for keys, what in SHORTCUTS)
         QMessageBox.information(
             self, "Keyboard Shortcuts",
             f"<table cellpadding='3'>{rows}</table>"
-            "<p>You can also drag & drop files onto the window.</p>")
+            f"<p>{tr('You can also drag & drop files onto the window.')}</p>")
 
     def show_about(self):
+        description = tr("Surface reconstruction from point clouds with "
+                         "Poisson, Ball Pivoting and Alpha Shapes (Open3D), "
+                         "rendered with VTK.")
         QMessageBox.about(
             self, "About Model Reconstruction",
             "<h3>Model Reconstruction</h3>"
-            "<p>Surface reconstruction from point clouds with Poisson, "
-            "Ball Pivoting and Alpha Shapes (Open3D), rendered with VTK.</p>"
+            f"<p>{description}</p>"
             "<p>Sobhan Shirvanloo</p>"
-            f"<p>Computations: {compute.device_name()}<br>"
-            f"Logs: {safety.log_folder()}</p>")
+            f"<p>{tr('Computations')}: {compute.device_name()}<br>"
+            f"{tr('Logs')}: {safety.log_folder()}</p>")
 
 
 # ---------- Main ----------
@@ -492,5 +522,6 @@ if __name__ == "__main__":
     application = QApplication.instance() or QApplication(sys.argv)
     application.setApplicationName("ModelReconstruction")
     safety.install()
+    i18n.install(application, settings.language())   # Persian: before any window
     window, app = create_splash_and_show(MainWindow)
     sys.exit(app.exec_())

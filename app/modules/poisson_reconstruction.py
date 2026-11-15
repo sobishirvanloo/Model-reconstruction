@@ -32,8 +32,10 @@ import time
 import numpy as np
 import open3d as o3d
 import vtk
-from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
+    QShortcut,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -381,6 +383,10 @@ class PoissonReconstruction(TabMixin):
                       "Compare this mesh with the original in tab 4 "
                       "(7 distance methods, error statistics)")
         self.decorate(self.btn_optimize, "target")
+        self.decorate(self.btn_stop, "stop")
+        stop_key = QShortcut(QKeySequence(Qt.Key_Escape), self.main_window)
+        stop_key.setContext(Qt.WindowShortcut)
+        stop_key.activated.connect(self._escape_pressed)
         self.decorate(self.btn_quality, QStyle.SP_FileDialogDetailedView,
                       "Quality metrics, error heatmap, run history and "
                       "robustness sweeps (Ctrl+R)")
@@ -420,9 +426,15 @@ class PoissonReconstruction(TabMixin):
             "Search the settings that fit the reference mesh best "
             "(one algorithm or all of them), then apply them")
         self.btn_optimize.clicked.connect(self.show_optimize_dialog)
+        self.btn_stop = QPushButton("Stop reconstruction")
+        self.btn_stop.setToolTip(
+            "Stop the reconstruction that is running now (Esc); the last "
+            "finished mesh stays")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self.stop_reconstruction)
         for widget in (self.label_algorithm, self.combo_algorithm,
                        self.label_factor, self.doubleSpinBox_factor,
-                       self.btn_optimize):
+                       self.btn_optimize, self.btn_stop):
             insert_widget(main_window.Depth, widget, after=False)
 
         self.algorithm = POISSON
@@ -786,6 +798,7 @@ class PoissonReconstruction(TabMixin):
         }
         cancel = threading.Event()
         self._build_run = {"cancel": cancel, "started": time.monotonic()}
+        self.btn_stop.setEnabled(True)
 
         def job(progress):
             result = build_mesh(params, points, normals, reference,
@@ -905,11 +918,30 @@ class PoissonReconstruction(TabMixin):
         elif self.heatmap_enabled:
             self._render_mesh()
 
+    def stop_reconstruction(self):
+        """Stop the running build now (the helper process is ended); the
+        last finished mesh stays.  A queued rebuild is dropped too."""
+        build = self._build_run
+        if build is None:
+            return
+        self._pending_run = False
+        build["stopped_by_user"] = True
+        build["cancel"].set()
+        self.btn_stop.setEnabled(False)
+
+    def _escape_pressed(self):
+        if self._build_run is not None and self.main_window.current_tab() is self:
+            self.stop_reconstruction()
+
     def _on_reconstruction_failed(self, message):
         build = self._build_run
         if build is not None and build["cancel"].is_set():
-            self.console.appendPlainText(
-                "⏹ Stopped the previous build - using the new parameters")
+            if build.get("stopped_by_user"):
+                self.notify("⏹ Reconstruction stopped - the last finished "
+                            "mesh is kept", "warning")
+            else:
+                self.console.appendPlainText(
+                    "⏹ Stopped the previous build - using the new parameters")
             return
         # Status bar only: while tuning live, a dialog per failure would nag
         self.notify(f"❌ Reconstruction failed: {message}", "error")
@@ -923,6 +955,7 @@ class PoissonReconstruction(TabMixin):
         self._worker.deleteLater()
         self._worker = None
         self._build_run = None
+        self.btn_stop.setEnabled(False)
         if self._pending_run:
             self._start_worker()
         elif self._pending_eval:

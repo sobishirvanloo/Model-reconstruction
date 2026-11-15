@@ -107,6 +107,15 @@ def set_pose_bar_visible(visible):
     _store().setValue("pose_bar", bool(visible))
 
 
+def language():
+    value = _store().value("language", "en")
+    return value if value in ("en", "fa") else "en"
+
+
+def set_language(code):
+    _store().setValue("language", code)
+
+
 def use_gpu():
     return _store().value("use_gpu", True, type=bool)
 
