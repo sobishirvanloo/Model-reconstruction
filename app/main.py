@@ -3,6 +3,13 @@
 import os
 import sys
 
+if __name__ == "__main__" and "--meshbench-helper" in sys.argv:
+    # MeshBench.exe started again as the computation helper (Windows build):
+    # serve requests, nothing else - no window, no Qt
+    from modules.isolated import serve
+    serve()
+    sys.exit(0)
+
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
@@ -18,7 +25,7 @@ from PyQt5.uic import loadUi
 
 import atexit
 
-from modules import compute, i18n, icons, isolated, safety, settings, theme
+from modules import compute, i18n, icons, isolated, paths, safety, settings, theme
 from modules.i18n import tr
 from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
@@ -70,9 +77,7 @@ class MainWindow(QMainWindow):
 
         # Resolve the .ui file relative to this file so the app can be
         # launched from anywhere (not only from inside app/).
-        ui_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "ui", "main.ui"
-        )
+        ui_path = paths.resource("ui", "main.ui")
         loadUi(ui_path, self)
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -573,6 +578,9 @@ def _register_app_identity():
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:             # build check, no window
+        from modules import selftest
+        sys.exit(selftest.headless())
     _register_app_identity()                 # before any window exists
     application = QApplication.instance() or QApplication(sys.argv)
     application.setApplicationName(APP_NAME)
@@ -581,5 +589,8 @@ if __name__ == "__main__":
     application.setApplicationVersion(VERSION)
     safety.install()
     i18n.install(application, settings.language())   # Persian: before any window
+    if "--selftest-gui" in sys.argv:         # build check with the window
+        from modules import selftest
+        sys.exit(selftest.gui(MainWindow, application))
     window, app = create_splash_and_show(MainWindow)
     sys.exit(app.exec_())

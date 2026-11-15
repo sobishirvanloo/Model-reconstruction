@@ -9,7 +9,7 @@ import open3d as o3d
 import vtk
 from PyQt5.QtWidgets import QFileDialog, QLabel, QPushButton, QStyle
 
-from modules import settings
+from modules import paths, settings
 from modules.geometry_utils import (
     estimate_oriented_normals,
     normalize,
@@ -25,10 +25,7 @@ from modules.point_data import (
 )
 from modules.vtk_controls import TabMixin, VTKViewport
 
-SAMPLE_MESH = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "models",
-    "Stanford_Bunny.stl",
-))
+SAMPLE_MESH = paths.sample_mesh()
 MESH_EXTENSIONS = (".ply", ".obj", ".stl", ".pcd", ".off", ".gltf", ".glb")
 OPEN_FILTER = "3D files (*.ply *.obj *.stl *.pcd *.off *.gltf *.glb);;All files (*)"
 

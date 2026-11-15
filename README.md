@@ -372,6 +372,31 @@ or mouse) is applied to exported and sent points, normals and meshes.
 * **Responsive UI** — heavy work runs on background threads, including
   the object statistics of large models.
 
+## Download for Windows
+
+Ready-made Windows (64-bit) builds are on the
+[Releases](https://github.com/sobishirvanloo/Model-reconstruction/releases)
+page:
+
+* **`MeshBench-Setup-1.0.exe`** — installer with Start-menu and desktop
+  shortcuts (uninstall from *Settings ▸ Apps*);
+* **`MeshBench-1.0-portable-win64.zip`** — no installation: unzip and run
+  `MeshBench\MeshBench.exe`.
+
+The files are not code-signed, so on the first start Windows may show
+*Windows protected your PC* — choose *More info ▸ Run anyway*.
+
+They are built on GitHub Actions ([`build-windows.yml`](.github/workflows/build-windows.yml)):
+PyInstaller ([`packaging/meshbench.spec`](packaging/meshbench.spec)) makes
+`MeshBench.exe`, the packaged program is self-tested (`--selftest`: the
+helper process, a reconstruction, a comparison and a slice; `--selftest-gui`:
+the window reconstructs the sample), then Inno Setup
+([`packaging/meshbench.iss`](packaging/meshbench.iss)) makes the installer.
+In the build the computation helper is `MeshBench.exe` itself, started again
+with `--meshbench-helper`, so it stays a separate process as in the sources.
+Run the workflow from the *Actions* tab, or push a tag `v…` to publish a
+release.
+
 ## Requirements
 
 * Python **3.14** (tested with numpy 2, VTK 9.7, Open3D 0.20, PyQt5 5.15).

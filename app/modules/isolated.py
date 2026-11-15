@@ -105,7 +105,10 @@ def _receive(stream):
 
 def serve():
     """Helper loop: read (job, args), answer ("ok", result) / ("error", text)."""
-    stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
+    # (a windowed Windows build may start without sys.stdin / sys.stdout
+    # objects although the pipes exist: open the descriptors directly)
+    stdin = sys.stdin.buffer if sys.stdin is not None else os.fdopen(0, "rb")
+    stdout = sys.stdout.buffer if sys.stdout is not None else os.fdopen(1, "wb")
     sys.stdout = sys.stderr            # stray prints must not corrupt the pipe
     _state["in_helper"] = True         # jobs run here, never in a sub-helper
     log = os.environ.get("MODELRECON_CRASH_LOG")
@@ -138,16 +141,27 @@ def serve():
 # Client side (in the application)
 # =========================
 def _isolation_possible():
-    return not getattr(sys, "frozen", False) and not _state["in_helper"]
+    return not _state["in_helper"]
 
 
-def _start():
+def _helper_command():
+    """From the sources: this Python running ``serve``; in a Windows build
+    (PyInstaller) there is no separate Python - MeshBench.exe itself is
+    started again with the helper flag (``main.py`` checks it first)."""
+    from modules import paths
+    if paths.FROZEN:
+        return [sys.executable, paths.HELPER_FLAG]
     folder = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     code = (f"import sys; sys.path.insert(0, {folder!r}); "
             "from modules.isolated import serve; serve()")
+    return [sys.executable, "-c", code]
+
+
+def _start():
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # Windows: no console
     process = subprocess.Popen(
-        [sys.executable, "-c", code], stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        _helper_command(), stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, creationflags=flags)
     status, _ = _receive(process.stdout)       # wait for "ready"
     if status != "ready":
         raise RuntimeError("helper did not start")

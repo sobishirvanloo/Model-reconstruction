@@ -20,3 +20,7 @@ app/normals.txt
 app/ui/test.ui
 models/reconstructed_mesh.stl
 models/reconstructed_mesh.obj
+# ---- Windows build (packaging/meshbench.spec) ----
+/build/
+/dist/
+meshbench-selftest.log

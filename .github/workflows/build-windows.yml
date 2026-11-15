@@ -1,0 +1,92 @@
+# MeshBench - Windows build: MeshBench.exe (PyInstaller), a self-test of
+# the packaged program, the installer (Inno Setup) and a portable zip.
+# Runs by hand (Actions > Windows build > Run workflow) or for a tag v*;
+# a tag also publishes the files on the Releases page.
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  VERSION: "1.0"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build MeshBench.exe (PyInstaller)
+        run: pyinstaller --noconfirm --distpath dist --workpath build packaging/meshbench.spec
+
+      - name: Self-test of the packaged program (no window)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\MeshBench\MeshBench.exe -ArgumentList "--selftest" -PassThru
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); throw "self-test timed out" }
+          Get-Content meshbench-selftest.log
+          if ($p.ExitCode -ne 0) { throw "self-test failed" }
+
+      - name: Software OpenGL (for the window test)
+        uses: ssciwr/setup-mesa-dist-win@v2
+        continue-on-error: true
+
+      - name: Self-test with the window
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Remove-Item meshbench-selftest.log -ErrorAction SilentlyContinue
+          $p = Start-Process dist\MeshBench\MeshBench.exe -ArgumentList "--selftest-gui" -PassThru
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); throw "window test timed out" }
+          Get-Content meshbench-selftest.log -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "window test failed" }
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\MeshBench -DestinationPath "dist\MeshBench-$env:VERSION-portable-win64.zip"
+
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc packaging\meshbench.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeshBench-${{ env.VERSION }}-windows
+          path: |
+            dist/MeshBench-Setup-*.exe
+            dist/MeshBench-*-portable-win64.zip
+          retention-days: 30
+
+      - name: Publish on the Releases page
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MeshBench ${{ env.VERSION }}
+          body: |
+            **MeshBench ${{ env.VERSION }}** for Windows (64-bit) - © 2026 Sobhan Shirvanlou. All rights reserved.
+
+            * `MeshBench-Setup-${{ env.VERSION }}.exe` - installer (Start menu and desktop shortcuts, uninstall from Settings)
+            * `MeshBench-${{ env.VERSION }}-portable-win64.zip` - no installation: unzip, run `MeshBench\MeshBench.exe`
+
+            The files are not code-signed: on the first start Windows may show "Windows protected your PC" - choose *More info* > *Run anyway*.
+          files: |
+            dist/MeshBench-Setup-*.exe
+            dist/MeshBench-*-portable-win64.zip
