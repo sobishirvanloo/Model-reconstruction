@@ -1,4 +1,4 @@
-# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanlou. All rights reserved.
 # See the LICENSE file in the project root for the terms of use.
 """Persistent user preferences (QSettings): theme, last folder, recent files."""
 

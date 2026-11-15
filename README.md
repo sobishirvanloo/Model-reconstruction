@@ -6,7 +6,7 @@ cloud with five algorithms (Poisson, Ball Pivoting, Alpha Shape, RIMLS,
 Signed Distance), tunes their parameters, and measures the result against
 the original model with seven distance methods.
 
-**Author:** Sobhan Shirvanloo · © 2026 Sobhan Shirvanloo. All rights
+**Author:** Sobhan Shirvanlou · © 2026 Sobhan Shirvanlou. All rights
 reserved. See [LICENSE](LICENSE) and [How to cite](#how-to-cite).
 
 ## Features
@@ -426,7 +426,7 @@ re-running with identical input gives geometrically identical meshes
 
 ## License
 
-MeshBench is © 2026 Sobhan Shirvanloo. **All rights reserved** — no
+MeshBench is © 2026 Sobhan Shirvanlou. **All rights reserved** — no
 licence is granted to copy, modify, publish or distribute it without the
 author's written permission, and it may not be presented, in whole or in
 part, as someone else's work. Full terms: [LICENSE](LICENSE).
@@ -435,7 +435,7 @@ part, as someone else's work. Full terms: [LICENSE](LICENSE).
 
 If you use MeshBench or results obtained with it, cite:
 
-> Sobhan Shirvanloo. *MeshBench: point-cloud surface reconstruction and
+> Sobhan Shirvanlou. *MeshBench: point-cloud surface reconstruction and
 > comparison*, version 1.0, 2026.
 > https://github.com/sobishirvanloo/Model-reconstruction
 

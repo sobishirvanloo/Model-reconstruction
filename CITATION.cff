@@ -4,7 +4,7 @@ title: "MeshBench: point-cloud surface reconstruction and comparison"
 version: "1.0"
 date-released: "2026-11-16"
 authors:
-  - family-names: "Shirvanloo"
+  - family-names: "Shirvanlou"
     given-names: "Sobhan"
 repository-code: "https://github.com/sobishirvanloo/Model-reconstruction"
 license-url: "https://github.com/sobishirvanloo/Model-reconstruction/blob/master/LICENSE"

@@ -1,4 +1,4 @@
-# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanlou. All rights reserved.
 # See the LICENSE file in the project root for the terms of use.
 """Shared compute helpers: GPU (CUDA) neighbour search with a CPU
 fallback, precise float32 queries for large coordinates, free memory.

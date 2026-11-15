@@ -1,4 +1,4 @@
-# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanlou. All rights reserved.
 # See the LICENSE file in the project root for the terms of use.
 """Name, version, owner and contact details of the application - the one
 place they are written, so every window shows the same."""
@@ -6,7 +6,7 @@ place they are written, so every window shows the same."""
 APP_NAME = "MeshBench"
 VERSION = "1.0"
 TAGLINE = "Point-cloud surface reconstruction & comparison"
-AUTHOR = "Sobhan Shirvanloo"
+AUTHOR = "Sobhan Shirvanlou"
 YEAR = "2026"
 COPYRIGHT = f"© {YEAR} {AUTHOR}. All rights reserved."
 GITHUB_URL = "https://github.com/sobishirvanloo"
