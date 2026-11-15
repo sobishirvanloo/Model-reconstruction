@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=MeshBench
+GenericName=Point-cloud surface reconstruction
+Comment=Rebuild a surface from a point cloud and compare it with the original
+# Replace /path/to with the folder of this project, then copy this file to
+# ~/.local/share/applications/ (the taskbar and the menu show the logo)
+Exec=python3 /path/to/app/main.py
+Icon=/path/to/app/resources/meshbench.png
+StartupWMClass=meshbench
+Categories=Graphics;Science;Engineering;
+Terminal=false

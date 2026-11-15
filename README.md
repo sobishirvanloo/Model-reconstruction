@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" width="128" alt="MeshBench logo"></p>
+
 # MeshBench
 
 **Point-cloud surface reconstruction & comparison** — a desktop
@@ -423,6 +425,17 @@ re-running with identical input gives geometrically identical meshes
   the duplicates were merged and their normals averaged.
 * `Stanford_Bunny.stl`, `Raven Tools.stl` — example meshes.
 * `reconstructed_mesh.stl` / `.obj` — previous reconstruction outputs.
+
+## Logo and shortcuts
+
+The logo (a geodesic sphere growing its mesh) is drawn by the program
+itself and is the window and taskbar icon; on Windows the program
+registers itself as *MeshBench*, so the taskbar shows the logo instead of
+Python's. Ready-made files are in [`app/resources`](app/resources):
+`meshbench.ico` (Windows shortcuts / installers), `meshbench.icns`
+(macOS), `meshbench.png` (512 px) and `meshbench.desktop` (Linux menu
+entry - set the two paths inside, then copy it to
+`~/.local/share/applications/`).
 
 ## License
 

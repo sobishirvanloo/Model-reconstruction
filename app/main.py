@@ -24,7 +24,7 @@ from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
-from modules.splash_screen import app_icon, create_splash_and_show
+from modules.splash_screen import app_icon, create_splash_and_show, logo_pixmap
 from modules.collapsible import make_collapsible
 from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
@@ -528,6 +528,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle(tr("Contact"))
         box.setTextFormat(Qt.RichText)
         box.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        box.setIconPixmap(logo_pixmap(72))
         box.setText(f"<h3>{AUTHOR}</h3>" + self._contact_html())
         box.setStandardButtons(QMessageBox.Close)
         self.contact_box = box               # kept for the tests
@@ -537,8 +538,14 @@ class MainWindow(QMainWindow):
         description = tr("Surface reconstruction from point clouds with "
                          "Poisson, Ball Pivoting and Alpha Shapes (Open3D), "
                          "rendered with VTK.")
-        QMessageBox.about(
-            self, tr("About MeshBench"),
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("About MeshBench"))
+        box.setIconPixmap(logo_pixmap(96))
+        box.setTextFormat(Qt.RichText)
+        box.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        box.setStandardButtons(QMessageBox.Close)
+        self.about_box = box                 # kept for the tests
+        box.setText(
             f"<h2>{APP_NAME}</h2>"
             f"<p>{tr('Version')} {VERSION} · {tr(TAGLINE)}</p>"
             f"<p>{description}</p>"
@@ -547,12 +554,28 @@ class MainWindow(QMainWindow):
             + self._contact_html() +
             f"<p>{tr('Computations')}: {compute.device_name()}<br>"
             f"{tr('Logs')}: {safety.log_folder()}</p>")
+        box.exec_()
 
 
 # ---------- Main ----------
+def _register_app_identity():
+    """Windows: run as "MeshBench", not as python.exe, so the taskbar
+    shows the MeshBench logo and groups its windows under it."""
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                f"SobhanShirvanlou.{APP_NAME}.{VERSION}")
+        except (AttributeError, OSError):
+            pass
+
+
 if __name__ == "__main__":
+    _register_app_identity()                 # before any window exists
     application = QApplication.instance() or QApplication(sys.argv)
     application.setApplicationName(APP_NAME)
+    application.setDesktopFileName("meshbench")   # Linux: matches meshbench.desktop
+    application.setWindowIcon(app_icon())
     application.setApplicationVersion(VERSION)
     safety.install()
     i18n.install(application, settings.language())   # Persian: before any window

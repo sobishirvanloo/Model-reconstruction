@@ -115,27 +115,78 @@ def paint_sphere(painter, center, radius, angle, tilt=0.42, mesh=1.0,
                             point_size * (0.7 + 0.5 * depth))
 
 
-def app_icon():
-    """Window / taskbar icon: the sphere on a rounded blue tile."""
-    icon = QIcon()
-    for size in (16, 24, 32, 48, 64, 128, 256):
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        tile = QRectF(0, 0, size, size).adjusted(size * 0.04, size * 0.04,
-                                                 -size * 0.04, -size * 0.04)
-        gradient = QLinearGradient(tile.topLeft(), tile.bottomRight())
-        gradient.setColorAt(0, BG_BOTTOM)
-        gradient.setColorAt(1, BG_TOP)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(gradient)
-        painter.drawRoundedRect(tile, size * 0.22, size * 0.22)
+def logo_pixmap(size):
+    """The MeshBench logo - the geodesic sphere on a rounded tile - as a
+    ``size`` x ``size`` image.  Small sizes get bolder lines and fewer,
+    larger points so the sphere stays readable in a taskbar."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    tile = QRectF(0, 0, size, size).adjusted(size * 0.04, size * 0.04,
+                                             -size * 0.04, -size * 0.04)
+    gradient = QLinearGradient(tile.topLeft(), tile.bottomRight())
+    gradient.setColorAt(0, BG_BOTTOM)
+    gradient.setColorAt(1, BG_TOP)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(gradient)
+    painter.drawRoundedRect(tile, size * 0.22, size * 0.22)
+    glow = QRadialGradient(tile.center(), size * 0.45)
+    glow.setColorAt(0, QColor(56, 214, 255, 70))
+    glow.setColorAt(1, QColor(56, 214, 255, 0))
+    painter.setBrush(glow)
+    painter.drawRoundedRect(tile, size * 0.22, size * 0.22)
+    if size < 40:
+        _paint_small_sphere(painter, tile.center(), size * 0.34)
+    else:
         paint_sphere(painter, tile.center(), size * 0.32, 0.6, mesh=1.0,
-                     point_size=max(0.6, size / 70))
-        painter.end()
-        icon.addPixmap(pixmap)
+                     point_size=max(0.8, size / 70))
+    painter.end()
+    return pixmap
+
+
+def _paint_small_sphere(painter, center, radius):
+    """Icon sizes: only the front half of the mesh, drawn bold."""
+    points = _project(0.6, 0.42, center, radius)
+    pen_width = max(1.0, radius / 7)
+    for a, b in EDGES:
+        depth = (points[a][2] + points[b][2]) / 2
+        if depth < 0.45:
+            continue
+        color = QColor(CYAN)
+        color.setAlphaF(min(1.0, 0.35 + 0.65 * depth))
+        painter.setPen(QPen(color, pen_width * (0.6 + 0.4 * depth)))
+        painter.drawLine(QPointF(points[a][0], points[a][1]),
+                         QPointF(points[b][0], points[b][1]))
+
+
+ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256, 512)
+
+
+def app_icon():
+    """Window / taskbar icon: the logo at every common size."""
+    icon = QIcon()
+    for size in ICON_SIZES:
+        icon.addPixmap(logo_pixmap(size))
     return icon
+
+
+def export_logo_files(folder):
+    """Write the logo as PNG (512 px), Windows .ico and macOS .icns into
+    ``folder`` (for shortcuts, installers and the README)."""
+    import os
+    os.makedirs(folder, exist_ok=True)
+    paths = {}
+    paths["png"] = os.path.join(folder, "meshbench.png")
+    logo_pixmap(512).save(paths["png"], "PNG")
+    for size in (16, 32, 48, 64, 128, 256):
+        path = os.path.join(folder, f"meshbench_{size}.png")
+        logo_pixmap(size).save(path, "PNG")
+    paths["ico"] = os.path.join(folder, "meshbench.ico")
+    logo_pixmap(256).save(paths["ico"], "ICO")
+    paths["icns"] = os.path.join(folder, "meshbench.icns")
+    logo_pixmap(512).save(paths["icns"], "ICNS")
+    return paths
 
 
 # =========================
