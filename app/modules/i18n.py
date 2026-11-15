@@ -306,6 +306,12 @@ FA = {
     "Dark Theme": "تم تیره",
     "Keyboard Shortcuts": "میانبرهای صفحه‌کلید",
     "About": "درباره",
+    "Contact…": "تماس…",
+    "Contact": "تماس",
+    "GitHub and e-mail of the author": "گیت‌هاب و ایمیل سازنده",
+    "Questions, bug reports or ideas - get in touch:": "برای سؤال، گزارش مشکل یا پیشنهاد با من در تماس باشید:",
+    "Project": "پروژه",
+    "E-mail": "ایمیل",
     "Language": "زبان",
     # ---------- tooltips ----------
     "Copy all values as text (tab separated)": "کپی همه‌ی مقدارها به‌صورت متن (جداشده با Tab)",

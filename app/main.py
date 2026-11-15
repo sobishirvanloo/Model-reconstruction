@@ -1,7 +1,7 @@
 import os
 import sys
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
@@ -31,6 +31,9 @@ TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct",
               "4   Compare")
 MESH_ONLY = (".stl", ".obj", ".off", ".gltf", ".glb")
 TABLE_ONLY = (".txt", ".csv", ".npy")
+GITHUB_URL = "https://github.com/sobishirvanloo"
+PROJECT_URL = "https://github.com/sobishirvanloo/Model-reconstruction"
+CONTACT_EMAIL = "sobi.shirvanloo@gmail.com"
 MESSAGE_TIMEOUT_MS = {"info": 6000, "success": 6000, "warning": 10000,
                       "error": 15000}
 
@@ -435,6 +438,8 @@ class MainWindow(QMainWindow):
 
         help_menu = bar.addMenu("&Help")
         self._action(help_menu, "&Keyboard Shortcuts", self.show_shortcuts, "F1")
+        self._action(help_menu, "&Contact…", self.show_contact,
+                     tip="GitHub and e-mail of the author")
         self._action(help_menu, "&About", self.show_about)
 
     def remove_all_data(self):
@@ -504,6 +509,28 @@ class MainWindow(QMainWindow):
             f"<table cellpadding='3'>{rows}</table>"
             f"<p>{tr('You can also drag & drop files onto the window.')}</p>")
 
+    def _contact_html(self):
+        return (f"<p>{tr('Questions, bug reports or ideas - get in touch:')}</p>"
+                "<table cellpadding='3'>"
+                f"<tr><td><b>GitHub</b>&nbsp;&nbsp;</td>"
+                f"<td><a href='{GITHUB_URL}'>{GITHUB_URL}</a></td></tr>"
+                f"<tr><td><b>{tr('Project')}</b>&nbsp;&nbsp;</td>"
+                f"<td><a href='{PROJECT_URL}'>{PROJECT_URL}</a></td></tr>"
+                f"<tr><td><b>{tr('E-mail')}</b>&nbsp;&nbsp;</td>"
+                f"<td><a href='mailto:{CONTACT_EMAIL}'>{CONTACT_EMAIL}</a></td></tr>"
+                "</table>")
+
+    def show_contact(self):
+        """Help > Contact: the author's GitHub and e-mail (clickable)."""
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Contact"))
+        box.setTextFormat(Qt.RichText)
+        box.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        box.setText("<h3>Sobhan Shirvanloo</h3>" + self._contact_html())
+        box.setStandardButtons(QMessageBox.Close)
+        self.contact_box = box               # kept for the tests
+        box.exec_()
+
     def show_about(self):
         description = tr("Surface reconstruction from point clouds with "
                          "Poisson, Ball Pivoting and Alpha Shapes (Open3D), "
@@ -513,6 +540,7 @@ class MainWindow(QMainWindow):
             "<h3>Model Reconstruction</h3>"
             f"<p>{description}</p>"
             "<p>Sobhan Shirvanloo</p>"
+            + self._contact_html() +
             f"<p>{tr('Computations')}: {compute.device_name()}<br>"
             f"{tr('Logs')}: {safety.log_folder()}</p>")
 
