@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Persian user interface (View ▸ Language).
 
 The program's texts are written in English.  With Persian selected,
@@ -625,7 +627,14 @@ FA = {
     "Mouse: right / middle drag": "موس: کشیدن با کلیک راست / وسط",
     "Mouse: wheel": "موس: چرخ",
     "You can also drag & drop files onto the window.": "می‌توانید فایل‌ها را روی پنجره هم بکشید و رها کنید.",
-    "About Model Reconstruction": "درباره‌ی Model Reconstruction",
+    "About MeshBench": "درباره‌ی MeshBench",
+    "Version": "نسخه",
+    "Created by": "ساخته‌ی",
+    "Point-cloud surface reconstruction & comparison": "بازسازی سطح از ابر نقاط و مقایسه",
+    "This software and its source code are the property of the author. "
+    "Copying, publishing or presenting it, in whole or in part, as someone "
+    "else’s work is not permitted; see LICENSE.":
+        "این نرم‌افزار و کد منبع آن متعلق به سازنده است. کپی، انتشار یا ارائه‌ی آن، به‌طور کامل یا بخشی از آن، به نام شخص دیگر مجاز نیست؛ به فایل LICENSE مراجعه کنید.",
     "Surface reconstruction from point clouds with Poisson, Ball Pivoting "
     "and Alpha Shapes (Open3D), rendered with VTK.":
         "بازسازی سطح از ابر نقاط با Poisson، Ball Pivoting، Alpha Shape، RIMLS و Signed Distance (Open3D)، با نمایش VTK.",

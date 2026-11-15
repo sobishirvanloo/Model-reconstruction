@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Point cloud container shared by the tabs, plus single-file I/O.
 
 ``PointCloudData`` always carries points and their normals together, so

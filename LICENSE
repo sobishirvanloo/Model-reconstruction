@@ -1,0 +1,31 @@
+MeshBench
+Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+
+This software, its source code, documentation, algorithms as implemented
+here, user interface and graphics (together, "the Software") were created
+by Sobhan Shirvanloo and are his property.
+
+1. No licence is granted to copy, modify, merge, publish, distribute,
+   sublicense or sell the Software, in whole or in part, without the
+   prior written permission of the author.
+
+2. Viewing the source code on GitHub, or running it for personal
+   evaluation, does not transfer any right in the Software.
+
+3. Academic use: the Software, its results, figures or text may not be
+   presented, submitted or published, in whole or in part, as the work of
+   anyone other than the author. Any academic or scientific use of the
+   Software or of results obtained with it must cite it:
+
+       Sobhan Shirvanloo. MeshBench: point-cloud surface reconstruction
+       and comparison, version 1.0, 2026.
+       https://github.com/sobishirvanloo/Model-reconstruction
+
+4. Third-party libraries used by the Software (PyQt5, VTK, Open3D,
+   NumPy) remain under their own licences.
+
+5. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO
+   EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+
+Permission requests: https://github.com/sobishirvanloo

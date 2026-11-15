@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Shared building blocks for the three VTK tabs.
 
 This module centralises code that used to be copy-pasted into every tab
@@ -51,7 +53,7 @@ from PyQt5.QtWidgets import (
 )
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from modules import icons, settings
+from modules import branding, icons, settings
 from modules.geometry_utils import vtk_matrix_to_numpy
 from modules.point_data import add_section, insert_widget, move_widget_after
 from modules import view_settings
@@ -333,7 +335,7 @@ class WelcomePanel(QFrame):
         self.setObjectName("welcome")
         outer = QVBoxLayout(self)
         outer.addStretch(2)
-        title = QLabel("Model Reconstruction", self)
+        title = QLabel(branding.APP_NAME, self)
         title.setProperty("role", "welcome_title")
         title.setAlignment(Qt.AlignCenter)
         subtitle = QLabel("Rebuild a surface from a point cloud and measure "
@@ -388,6 +390,10 @@ class WelcomePanel(QFrame):
         drop.setAlignment(Qt.AlignCenter)
         outer.addWidget(drop)
         outer.addStretch(3)
+        owner = QLabel(f"{branding.APP_NAME} {branding.VERSION} · {branding.COPYRIGHT}", self)
+        owner.setProperty("role", "hint")
+        owner.setAlignment(Qt.AlignCenter)
+        outer.addWidget(owner)
         self.refresh_icons()
 
     def refresh_icons(self):
@@ -1466,7 +1472,7 @@ class TabMixin(RotationMixin):
             show(text, level)
         if dialog:
             box = QMessageBox.warning if level == "error" else QMessageBox.information
-            box(self.main_window, "Model Reconstruction", text.lstrip("❌✅⚠ "))
+            box(self.main_window, branding.APP_NAME, text.lstrip("❌✅⚠ "))
 
     def set_tab_info(self, **info):
         """Update what the status bar shows for this tab (file, points,

@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Tab 1 - Import mesh / point cloud, rotate it and export points+normals."""
 
 import os

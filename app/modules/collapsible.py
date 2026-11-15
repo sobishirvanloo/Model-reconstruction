@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Collapsible sections in the side panels.
 
 Every panel is a vertical list: section headers (``QLabel`` with

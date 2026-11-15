@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Parameter optimisation: find the reconstruction settings that fit the
 reference (ground-truth) mesh best.
 

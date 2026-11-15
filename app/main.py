@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 import os
 import sys
 
@@ -22,7 +24,7 @@ from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
-from modules.splash_screen import create_splash_and_show
+from modules.splash_screen import app_icon, create_splash_and_show
 from modules.collapsible import make_collapsible
 from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
@@ -31,9 +33,8 @@ TAB_TITLES = ("1   Import mesh", "2   Process points", "3   Reconstruct",
               "4   Compare")
 MESH_ONLY = (".stl", ".obj", ".off", ".gltf", ".glb")
 TABLE_ONLY = (".txt", ".csv", ".npy")
-GITHUB_URL = "https://github.com/sobishirvanloo"
-PROJECT_URL = "https://github.com/sobishirvanloo/Model-reconstruction"
-CONTACT_EMAIL = "sobi.shirvanloo@gmail.com"
+from modules.branding import (APP_NAME, AUTHOR, CONTACT_EMAIL, COPYRIGHT,
+                               GITHUB_URL, PROJECT_URL, TAGLINE, VERSION)
 MESSAGE_TIMEOUT_MS = {"info": 6000, "success": 6000, "warning": 10000,
                       "error": 15000}
 
@@ -72,7 +73,8 @@ class MainWindow(QMainWindow):
             os.path.dirname(os.path.abspath(__file__)), "ui", "main.ui"
         )
         loadUi(ui_path, self)
-        self.setWindowTitle("Model Reconstruction")
+        self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(app_icon())
 
         self._tab_info = {}
         self._build_status_bar()
@@ -526,7 +528,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle(tr("Contact"))
         box.setTextFormat(Qt.RichText)
         box.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        box.setText("<h3>Sobhan Shirvanloo</h3>" + self._contact_html())
+        box.setText(f"<h3>{AUTHOR}</h3>" + self._contact_html())
         box.setStandardButtons(QMessageBox.Close)
         self.contact_box = box               # kept for the tests
         box.exec_()
@@ -536,10 +538,12 @@ class MainWindow(QMainWindow):
                          "Poisson, Ball Pivoting and Alpha Shapes (Open3D), "
                          "rendered with VTK.")
         QMessageBox.about(
-            self, "About Model Reconstruction",
-            "<h3>Model Reconstruction</h3>"
+            self, tr("About MeshBench"),
+            f"<h2>{APP_NAME}</h2>"
+            f"<p>{tr('Version')} {VERSION} · {tr(TAGLINE)}</p>"
             f"<p>{description}</p>"
-            "<p>Sobhan Shirvanloo</p>"
+            f"<p><b>{tr('Created by')} {AUTHOR}</b><br>{COPYRIGHT}<br>"
+            f"{tr('This software and its source code are the property of the author. Copying, publishing or presenting it, in whole or in part, as someone else’s work is not permitted; see LICENSE.')}</p>"
             + self._contact_html() +
             f"<p>{tr('Computations')}: {compute.device_name()}<br>"
             f"{tr('Logs')}: {safety.log_folder()}</p>")
@@ -548,7 +552,8 @@ class MainWindow(QMainWindow):
 # ---------- Main ----------
 if __name__ == "__main__":
     application = QApplication.instance() or QApplication(sys.argv)
-    application.setApplicationName("ModelReconstruction")
+    application.setApplicationName(APP_NAME)
+    application.setApplicationVersion(VERSION)
     safety.install()
     i18n.install(application, settings.language())   # Persian: before any window
     window, app = create_splash_and_show(MainWindow)

@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Crash protection and logging.
 
 * An exception that escapes a Qt slot makes PyQt5 abort the whole
@@ -69,7 +71,7 @@ def _report(kind, value, tb):
         _state["dialog_open"] = True
         try:
             QMessageBox.warning(
-                app.activeWindow(), "Model Reconstruction - unexpected error",
+                app.activeWindow(), "MeshBench - unexpected error",
                 f"An unexpected error occurred, the program keeps running:\n\n"
                 f"{kind.__name__}: {value}\n\nDetails were saved to:\n{path}")
         finally:

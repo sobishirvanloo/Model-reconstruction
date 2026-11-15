@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Numbers about the displayed object, shown next to the log console.
 
 ``ObjectInfoPanel`` is a two-column tree (property / value) grouped in

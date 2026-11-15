@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Reconstruction tab: *Optimize parameters* window.
 
 Settings (algorithm or all, objective, minimum recall, runs, noisy-data

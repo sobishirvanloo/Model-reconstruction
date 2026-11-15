@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Persistent user preferences (QSettings): theme, last folder, recent files."""
 
 import json
@@ -5,11 +7,28 @@ import os
 
 from PyQt5.QtCore import QSettings
 
+from modules import branding
+
 MAX_RECENT = 8
 
 
 def _store():
-    return QSettings("ModelReconstruction", "ModelReconstruction")
+    store = QSettings(branding.SETTINGS_ORG, branding.SETTINGS_APP)
+    if not _migrated and not store.allKeys():
+        _migrate(store)
+    return store
+
+
+_migrated = []
+
+
+def _migrate(store):
+    """Keep the preferences saved under the program's former name."""
+    _migrated.append(True)
+    old = QSettings(*branding.LEGACY_SETTINGS)
+    for key in old.allKeys():
+        store.setValue(key, old.value(key))
+    store.sync()
 
 
 def theme(default="light"):

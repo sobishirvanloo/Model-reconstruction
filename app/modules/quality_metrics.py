@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Quantitative quality metrics for a reconstructed mesh.
 
 The reconstruction is compared with a *reference*:

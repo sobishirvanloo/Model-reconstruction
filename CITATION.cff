@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use MeshBench or results obtained with it, please cite it as below."
+title: "MeshBench: point-cloud surface reconstruction and comparison"
+version: "1.0"
+date-released: "2026-11-16"
+authors:
+  - family-names: "Shirvanloo"
+    given-names: "Sobhan"
+repository-code: "https://github.com/sobishirvanloo/Model-reconstruction"
+license-url: "https://github.com/sobishirvanloo/Model-reconstruction/blob/master/LICENSE"
+keywords:
+  - surface reconstruction
+  - point cloud
+  - mesh comparison
+  - Poisson
+  - M3C2

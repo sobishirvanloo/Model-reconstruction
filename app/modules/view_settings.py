@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Object / background appearance of the 3D views.
 
 * ``ObjectSettingsDialog``      colour (the file's own colours or a custom

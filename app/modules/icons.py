@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """One consistent line-icon set that follows the theme.
 
 Qt's built-in icons (``QStyle.SP_*``) differ per platform and do not

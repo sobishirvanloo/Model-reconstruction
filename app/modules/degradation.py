@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Controlled degradation of point clouds, for robustness experiments.
 
 Every perturbation is reproducible (seeded) and sized relative to the

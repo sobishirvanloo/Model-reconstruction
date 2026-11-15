@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Tab 4 - Compare a reconstruction with the reference (original) mesh.
 
 Same layout as the other tabs (3D view + side panel + log), with the

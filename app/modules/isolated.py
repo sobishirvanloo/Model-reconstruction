@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Run crash-prone, GIL-holding native code in a helper process.
 
 * Open3D occasionally segfaults inside the library (seen in Poisson; Ball

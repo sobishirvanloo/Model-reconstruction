@@ -1,3 +1,5 @@
+# MeshBench - Copyright (c) 2026 Sobhan Shirvanloo. All rights reserved.
+# See the LICENSE file in the project root for the terms of use.
 """Model-to-model comparison: a *compared* model (the reconstruction) is
 measured against a *reference* (the original mesh).
 
