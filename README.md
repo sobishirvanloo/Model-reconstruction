@@ -146,6 +146,11 @@ off to keep both models in their own colours after a comparison;
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.
+* **One zero for all tabs** — *Send to …* hands the data over in its own
+  (file) coordinates together with the six rotation / position values, and
+  the next tab shows it with the same values: a model at X = 10° in one tab
+  is at X = 10° in the next, not a new 0. Saved files still contain the
+  model as it is shown.
 * **Pose bar** — rotation and position X / Y / Z (number box + slider,
   with their reset buttons) sit in a compact bar under every 3D view
   instead of the side panel; the **Pose** button on the view toolbar or

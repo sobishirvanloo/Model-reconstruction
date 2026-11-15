@@ -198,8 +198,10 @@ class Geometry(TabMixin):
     # =========================
     # Current data (as displayed)
     # =========================
-    def current_data(self):
-        """Points + normals with the displayed rotation applied."""
+    def current_data(self, apply_pose=True):
+        """Points + normals with the displayed rotation applied (for files);
+        ``apply_pose=False``: in their own coordinates, the rotation /
+        position travel along as ``pose`` (for another tab)."""
         reference = (
             (self.points, self.triangles) if self.triangles is not None else None
         )
@@ -207,13 +209,17 @@ class Geometry(TabMixin):
             self.points, self.normals, self.source_name, reference,
             colors=self.colors,
         )
+        if not apply_pose:
+            data.pose = self.pose_state()
+            return data
         return data.transformed(self.actor_matrix())
 
     def send_data(self, target):
         if self.points is None:
             self.notify(self.NO_ACTOR_MESSAGE, "warning")
             return
-        self.main_window.send_point_cloud(self.current_data(), target)
+        self.main_window.send_point_cloud(
+            self.current_data(apply_pose=False), target)
         self.console.appendPlainText(
             f"➡ Sent {len(self.points)} points + normals to {target}"
         )

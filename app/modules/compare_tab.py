@@ -595,15 +595,14 @@ class Compare(TabMixin):
             self.set_models(self.compared, model, self.source_name, model.name)
 
     def from_reconstruction(self):
-        """The mesh of tab 3 (as displayed) and its ground truth."""
+        """The mesh of tab 3 and its ground truth, in their own coordinates;
+        the view takes tab 3's rotation / position."""
         tab = getattr(self.main_window, "poisson", None)
         if tab is None or tab._mesh_arrays is None:
             self.notify("❌ There is no reconstructed mesh in the Reconstruct tab",
                         "warning")
             return
-        matrix = tab.actor_matrix()
         vertices, normals, triangles = tab._mesh_arrays
-        vertices, normals = apply_transform(matrix, vertices, normals)
         build = tab._last_build or {}
         name = (f"{tab.source_name or 'reconstruction'} · "
                 f"{build.get('setting', '')}").strip(" ·")
@@ -611,11 +610,11 @@ class Compare(TabMixin):
         reference, reference_name = self.reference, self.reference_name
         if tab.reference is not None:
             ref_vertices, ref_triangles = tab.reference
-            ref_vertices, _ = apply_transform(matrix, ref_vertices)
             reference = Model(ref_vertices, ref_triangles, None,
                               tab.reference_name or "original mesh")
             reference_name = reference.name
-        self.set_models(compared, reference, name, reference_name)
+        self.set_models(compared, reference, name, reference_name,
+                        pose=tab.pose_state())
         if tab.reference is None and reference is None:
             self.notify("Mesh received - open the reference mesh to compare",
                         "warning")
@@ -625,7 +624,7 @@ class Compare(TabMixin):
         if tab is None or tab.points is None:
             self.notify("❌ The Import mesh tab has no model", "warning")
             return
-        data = tab.current_data()
+        data = tab.current_data(apply_pose=False)   # same coordinates as tab 3
         if data.reference is not None:
             vertices, triangles = data.reference
             reference = Model(vertices, triangles, None, tab.source_name)
@@ -633,7 +632,8 @@ class Compare(TabMixin):
             reference = Model(data.points, None, data.normals, tab.source_name)
         self.set_models(self.compared, reference, self.source_name, reference.name)
 
-    def set_models(self, compared, reference, compared_name, reference_name):
+    def set_models(self, compared, reference, compared_name, reference_name,
+                   pose=None):
         """New models: old results no longer apply.
 
         The rotation / position the user gave the view is kept, so a model
@@ -649,6 +649,8 @@ class Compare(TabMixin):
         first = self.actor is None
         if first:
             self.reset_transform()
+        if pose is not None:               # the sending tab's rotation / position
+            self.restore_pose(pose)
         if (compared is not None and reference is not None
                 and self.check_auto_align.isChecked()):
             self.align_models(force=False, show=False)

@@ -364,6 +364,8 @@ class Processing(TabMixin):
         self.Point_density_spinbox.blockSignals(False)
 
         self.reset_transform()
+        if data.pose is not None:          # same rotation / position as the sender
+            self.restore_pose(data.pose)
         self.render_points()
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)
@@ -413,9 +415,10 @@ class Processing(TabMixin):
     # =========================
     # Current data (as displayed)
     # =========================
-    def current_data(self):
+    def current_data(self, apply_pose=True):
         """Modified points + normals (estimated if missing) with the
-        displayed rotation applied."""
+        displayed rotation applied (for files); ``apply_pose=False``: in
+        their own coordinates with the rotation / position as ``pose``."""
         note = "" if self.degradation.is_identity else self.degradation.describe()
         data = PointCloudData(
             self.points_changed, self.normals_changed, self.source_name,
@@ -425,6 +428,9 @@ class Processing(TabMixin):
             self.console.appendPlainText("⏳ Estimating normals…")
             data = data.with_normals(self.Point_density_spinbox.value())
             self.normals_changed = data.normals.copy()
+        if not apply_pose:
+            data.pose = self.pose_state()
+            return data
         return data.transformed(self.actor_matrix())
 
     # =========================
@@ -435,7 +441,7 @@ class Processing(TabMixin):
             self.console.appendPlainText("❌ No data to send")
             return
         try:
-            data = self.current_data()
+            data = self.current_data(apply_pose=False)
             self.main_window.send_point_cloud(data, "reconstruction")
             self.console.appendPlainText(
                 f"➡ Sent {len(data)} points + normals to reconstruction"

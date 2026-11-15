@@ -551,6 +551,8 @@ class PoissonReconstruction(TabMixin):
         self.btn_export.setEnabled(False)
         self.btn_remove.setEnabled(True)
         self.reset_transform()
+        if data.pose is not None:          # same rotation / position as the sender
+            self.restore_pose(data.pose)
 
         # Start the reconstruction in the background right away
         self._live_timer.stop()

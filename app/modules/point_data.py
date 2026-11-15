@@ -61,6 +61,10 @@ class PointCloudData:
     reference: Optional[tuple] = None
     note: str = ""          # how the data was degraded (e.g. "noise σ=0.5%")
     colors: Optional[np.ndarray] = None   # RGB 0..1 from the file, if any
+    # rotation / position of the sending tab's view ({"rotation", "position"}):
+    # the data stays in its own coordinates and the receiving tab shows it
+    # with the same six values, so 0 means the same everywhere
+    pose: Optional[dict] = None
 
     def __post_init__(self):
         self.points = np.asarray(self.points, dtype=float)[:, :3]
@@ -108,6 +112,7 @@ class PointCloudData:
             self.reference,
             self.note,
             None if self.colors is None else self.colors.copy(),
+            self.pose,
         )
 
     def transformed(self, matrix):
@@ -130,7 +135,7 @@ class PointCloudData:
         estimate_oriented_normals(pcd, voxel_size=voxel_size)
         return PointCloudData(
             self.points.copy(), np.asarray(pcd.normals).copy(), self.source,
-            self.reference, self.note, self.colors,
+            self.reference, self.note, self.colors, self.pose,
         )
 
     # =========================
