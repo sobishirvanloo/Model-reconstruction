@@ -86,6 +86,19 @@ def clear_layout_state():
     _store().remove("layout")
 
 
+def panel_collapsed(key, title):
+    """Whether a side-panel section was left collapsed."""
+    return _store().value(f"panel/{key}/{title}", False, type=bool)
+
+
+def set_panel_collapsed(key, title, collapsed):
+    _store().setValue(f"panel/{key}/{title}", bool(collapsed))
+
+
+def clear_panel_state():
+    _store().remove("panel")
+
+
 def use_gpu():
     return _store().value("use_gpu", True, type=bool)
 

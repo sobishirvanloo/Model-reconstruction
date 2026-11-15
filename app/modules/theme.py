@@ -178,6 +178,7 @@ QLabel[role="section"] {{
     color: {p['text_muted']}; font-size: 11px; font-weight: bold;
     letter-spacing: 1px; padding: 10px 0 2px 0;
     border-bottom: 1px solid {p['border']}; }}
+QLabel[role="section"]:hover {{ color: {p['text']}; }}
 QLabel[role="hint"] {{ color: {p['text_muted']}; font-size: 12px; }}
 QLabel[role="file"] {{ color: {p['text']}; font-weight: bold; }}
 

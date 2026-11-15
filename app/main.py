@@ -22,6 +22,7 @@ from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
 from modules.splash_screen import create_splash_and_show
+from modules.collapsible import make_collapsible
 from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
 
@@ -88,9 +89,11 @@ class MainWindow(QMainWindow):
                                  "compare"), self.tabs)
         ]
 
-        for tab in self.tabs:
+        for key, tab in zip(("import", "processing", "reconstruction",
+                             "compare"), self.tabs):
             panel = tab.btn_import.parentWidget()
             panel.setProperty("role", "panel")
+            tab.side_panel = make_collapsible(panel, key)   # fold sections
         for index, title in enumerate(TAB_TITLES):
             self.tabWidget.setTabText(index, title)
         self.tabWidget.currentChanged.connect(self._refresh_status)
@@ -266,6 +269,9 @@ class MainWindow(QMainWindow):
         for splitter in self.splitters:
             splitter.reset()
         settings.clear_layout_state()
+        for tab in self.tabs:                  # every section open again
+            tab.side_panel.set_all(False)
+        settings.clear_panel_state()
         self.show_message("Layout reset to the default sizes")
 
     def closeEvent(self, event):

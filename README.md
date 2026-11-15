@@ -146,6 +146,10 @@ off to keep both models in their own colours after a comparison;
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.
+* **Collapsible sections** — click a section header in a side panel
+  (▾ / ▸) to fold it, right-click for *Expand / Collapse all*; the state is
+  remembered per tab (*View ▸ Reset Layout* opens them all again). Folding
+  only hides the section: every control keeps its value and state.
 * Side panels are split into sections with tooltips on every parameter;
   rotation and **position** (X/Y/Z, model units) sliders act **live**
   (*Reset rotation* / *Reset position* set them back to 0).
