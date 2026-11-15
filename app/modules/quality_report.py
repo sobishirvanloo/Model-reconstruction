@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
 
 import os
 
-from modules import settings
+from modules import icons, settings
 from modules.quality_metrics import metric_rows, rows_to_markdown
 
 
@@ -36,7 +36,8 @@ def make_button(text, icon=None, tooltip="", variant=None):
     """Push button with a standard icon and an optional theme variant."""
     button = QPushButton(text)
     if icon is not None:
-        button.setIcon(button.style().standardIcon(icon))
+        button.setIcon(icons.for_standard(icon, variant)
+                       or button.style().standardIcon(icon))
     if tooltip:
         button.setToolTip(tooltip)
     if variant:

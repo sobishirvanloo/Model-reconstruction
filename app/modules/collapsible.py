@@ -61,9 +61,15 @@ class CollapsiblePanel(QObject):
             widget = item.widget()
             if _is_header(widget):
                 current = (widget, [])
-                groups.append(current)
+                # a hidden header (its controls moved elsewhere, e.g. the
+                # pose bar) is not made foldable; its items stay in place
+                if not widget.isHidden():
+                    groups.append(current)
             elif current is not None:
                 current[1].append(item)
+                if current[0].isHidden() and item.spacerItem() is not None:
+                    # the controls of a hidden section moved away: no gap
+                    item.spacerItem().changeSize(0, 0)
         for header, members in groups:
             self._wrap(layout, header, members)
 

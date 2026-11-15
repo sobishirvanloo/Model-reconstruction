@@ -146,6 +146,14 @@ off to keep both models in their own colours after a comparison;
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.
+* **Pose bar** — rotation and position X / Y / Z (number box + slider,
+  with their reset buttons) sit in a compact bar under every 3D view
+  instead of the side panel; the **Pose** button on the view toolbar or
+  *View ▸ Pose Bar* hides / shows it in all tabs (remembered).
+* **Themed icons** — one consistent line-icon set (`modules/icons.py`)
+  replaces the platform's built-in icons on buttons, menus and toolbars;
+  it is drawn in the theme colours, so it follows light / dark (white on
+  the blue main buttons, red on *Remove data*).
 * **Collapsible sections** — click a section header in a side panel
   (▾ / ▸) to fold it, right-click for *Expand / Collapse all*; the state is
   remembered per tab (*View ▸ Reset Layout* opens them all again). Folding

@@ -21,6 +21,11 @@ import tempfile
 
 from PyQt5.QtCore import QPointF, Qt
 from PyQt5.QtGui import QColor, QImage, QPainter, QPalette, QPen, QPolygonF
+from PyQt5.QtWidgets import QStyleFactory
+
+from modules import icons
+
+_style = {"current": None}      # the installed IconStyle (kept alive here)
 
 LIGHT = "light"
 DARK = "dark"
@@ -179,6 +184,9 @@ QLabel[role="section"] {{
     letter-spacing: 1px; padding: 10px 0 2px 0;
     border-bottom: 1px solid {p['border']}; }}
 QLabel[role="section"]:hover {{ color: {p['text']}; }}
+QFrame#poseBar {{
+    background-color: {p['surface']}; border-top: 1px solid {p['border']}; }}
+QFrame#poseBar QLabel[role="posebar"] {{ color: {p['text_muted']}; font-size: 11px; font-weight: bold; }}
 QLabel[role="hint"] {{ color: {p['text_muted']}; font-size: 12px; }}
 QLabel[role="file"] {{ color: {p['text']}; font-weight: bold; }}
 
@@ -345,7 +353,10 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 def apply_theme(app, name):
     """Apply a theme to the whole application; returns its palette dict."""
     palette = PALETTES[name]
-    app.setStyle("Fusion")
+    icons.set_palette(palette)                 # themed icons repaint with it
+    if not isinstance(app.style(), icons.IconStyle):
+        _style["current"] = icons.IconStyle(QStyleFactory.create("Fusion"))
+        app.setStyle(_style["current"])
     app.setPalette(build_palette(palette))
     app.setStyleSheet(build_qss(palette))
     return palette

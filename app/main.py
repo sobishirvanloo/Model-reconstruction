@@ -16,7 +16,7 @@ from PyQt5.uic import loadUi
 
 import atexit
 
-from modules import compute, isolated, safety, settings, theme
+from modules import compute, icons, isolated, safety, settings, theme
 from modules.compare_tab import Compare
 from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
@@ -91,6 +91,7 @@ class MainWindow(QMainWindow):
 
         for key, tab in zip(("import", "processing", "reconstruction",
                              "compare"), self.tabs):
+            tab.viewport.build_pose_bar()     # rotation / position under the view
             panel = tab.btn_import.parentWidget()
             panel.setProperty("role", "panel")
             tab.side_panel = make_collapsible(panel, key)   # fold sections
@@ -207,7 +208,7 @@ class MainWindow(QMainWindow):
             has_data = bool(self._tab_info[tab].get("points"))
             self.tabWidget.setTabIcon(
                 index,
-                self.style().standardIcon(QStyle.SP_DialogApplyButton)
+                icons.icon("check", "success")
                 if has_data else QIcon())
         self._refresh_status()
 
@@ -312,6 +313,16 @@ class MainWindow(QMainWindow):
         isolated.run_if_started("gpu", bool(enabled))
         self.show_message(f"Computations run on: {compute.device_name()}")
 
+    def show_pose_bar(self, visible):
+        """Rotation / position bar under the views (all tabs), remembered."""
+        settings.set_pose_bar_visible(visible)
+        for tab in self.tabs:
+            tab.viewport.set_pose_bar_visible(visible)
+        if hasattr(self, "pose_bar_action"):
+            self.pose_bar_action.blockSignals(True)
+            self.pose_bar_action.setChecked(visible)
+            self.pose_bar_action.blockSignals(False)
+
     def show_mouse_guide(self, visible):
         for tab in self.tabs:
             tab.viewport.mouse_guide.setVisible(visible)
@@ -391,6 +402,11 @@ class MainWindow(QMainWindow):
             self.action_gpu.setText("Use GPU for Computations (no CUDA GPU found)")
         self._action(view_menu, "Reset &Layout", self.reset_layout,
                      tip="Default sizes of the 3D view, side panel and console")
+        self.pose_bar_action = self._action(
+            view_menu, "&Pose Bar", self.show_pose_bar,
+            tip="Show / hide the rotation and position bar under the 3D views")
+        self.pose_bar_action.setCheckable(True)
+        self.pose_bar_action.setChecked(settings.pose_bar_visible())
         self.action_mouse_guide = self._action(
             view_menu, "&Mouse Guide", self.show_mouse_guide,
             tip="Show / hide the mouse help under the 3D views")

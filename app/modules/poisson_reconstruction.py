@@ -380,7 +380,7 @@ class PoissonReconstruction(TabMixin):
         self.decorate(self.btn_send_compare, QStyle.SP_ArrowForward,
                       "Compare this mesh with the original in tab 4 "
                       "(7 distance methods, error statistics)")
-        self.decorate(self.btn_optimize, QStyle.SP_FileDialogContentsView)
+        self.decorate(self.btn_optimize, "target")
         self.decorate(self.btn_quality, QStyle.SP_FileDialogDetailedView,
                       "Quality metrics, error heatmap, run history and "
                       "robustness sweeps (Ctrl+R)")

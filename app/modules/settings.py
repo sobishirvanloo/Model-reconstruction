@@ -99,6 +99,14 @@ def clear_panel_state():
     _store().remove("panel")
 
 
+def pose_bar_visible():
+    return _store().value("pose_bar", True, type=bool)
+
+
+def set_pose_bar_visible(visible):
+    _store().setValue("pose_bar", bool(visible))
+
+
 def use_gpu():
     return _store().value("use_gpu", True, type=bool)
 

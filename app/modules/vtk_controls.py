@@ -36,6 +36,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -50,7 +51,7 @@ from PyQt5.QtWidgets import (
 )
 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
-from modules import settings
+from modules import icons, settings
 from modules.geometry_utils import vtk_matrix_to_numpy
 from modules.point_data import add_section, insert_widget, move_widget_after
 from modules import view_settings
@@ -267,6 +268,50 @@ class MouseGuide(QFrame):
                                       palette["primary"]))
 
 
+class PoseBar(QFrame):
+    """Compact strip under a view with the six pose controls - rotation
+    and position X / Y / Z, each a number box and a slider, plus their
+    reset buttons.  The tab's own widgets are moved here from the side
+    panel (``VTKViewport.build_pose_bar``), so everything wired to them
+    keeps working."""
+
+    AXIS_COLORS = {"X": "#d64545", "Y": "#2f9e44", "Z": "#2f6fdb"}
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("poseBar")
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(10, 4, 6, 4)
+        self.grid.setHorizontalSpacing(6)
+        self.grid.setVerticalSpacing(2)
+        self.rows = 0
+
+    def add_row(self, title, pairs, reset_button, reset_tip):
+        row = self.rows
+        self.rows += 1
+        label = QLabel(title, self)
+        label.setProperty("role", "posebar")
+        label.setMinimumWidth(62)
+        self.grid.addWidget(label, row, 0)
+        column = 1
+        for axis, (box, slider) in zip("XYZ", pairs):
+            name = QLabel(axis, self)
+            name.setStyleSheet(f"color: {self.AXIS_COLORS[axis]}; font-weight: bold;")
+            box.setMinimumWidth(64)
+            box.setMaximumWidth(92)
+            slider.setMinimumWidth(40)
+            self.grid.addWidget(name, row, column)
+            self.grid.addWidget(box, row, column + 1)
+            self.grid.addWidget(slider, row, column + 2)
+            self.grid.setColumnStretch(column + 2, 1)
+            column += 3
+        reset_button.setText("")
+        reset_button.setIcon(icons.icon("reset"))
+        reset_button.setToolTip(reset_tip)
+        reset_button.setFixedWidth(34)
+        self.grid.addWidget(reset_button, row, column)
+
+
 class VTKViewport:
     """Creates the console, camera toolbar and VTK render window of a tab.
 
@@ -346,9 +391,8 @@ class VTKViewport:
     # =========================
     def _build_toolbar(self, parent):
         toolbar = QToolBar(parent)
-        style = parent.style()
-        reset = toolbar.addAction(
-            style.standardIcon(QStyle.SP_BrowserReload), "Reset view")
+        reset = toolbar.addAction(icons.icon("home"), "Reset view")
+        self._themed_actions = [(reset, "home")]
         reset.setToolTip("Rotation and position back to 0 and fit the "
                          "model in the view (Ctrl+0)")
         reset.triggered.connect(self.reset_pose)
@@ -394,11 +438,69 @@ class VTKViewport:
             lambda: self.restore_default(BACKGROUND))
 
         toolbar.addSeparator()
-        shot = toolbar.addAction(
-            style.standardIcon(QStyle.SP_DialogSaveButton), "Screenshot")
+        self.pose_action = toolbar.addAction(icons.icon("pose"), "Pose")
+        self.pose_action.setCheckable(True)
+        self.pose_action.setChecked(settings.pose_bar_visible())
+        self.pose_action.setToolTip(
+            "Show / hide the rotation and position bar under the view")
+        self.pose_action.toggled.connect(self._pose_bar_toggled)
+        shot = toolbar.addAction(icons.icon("camera"), "Screenshot")
+        self._themed_actions += [(self.pose_action, "pose"), (shot, "camera")]
         shot.setToolTip("Save the view as a PNG image")
         shot.triggered.connect(self.save_screenshot)
         return toolbar
+
+    # =========================
+    # Pose bar
+    # =========================
+    def build_pose_bar(self):
+        """Move the tab's rotation / position controls from the side panel
+        into a compact bar under the view (their labels and section
+        headers in the panel are hidden)."""
+        owner = self.owner
+        rotation = [(getattr(owner, f"spinBox_{a}"), getattr(owner, f"slider_{a}"))
+                    for a in "XYZ"]
+        position = [(owner.position_boxes[a], owner.position_sliders[a])
+                    for a in "XYZ"]
+        for box, _ in rotation + position:
+            self._hide_panel_labels(box)
+        self.pose_bar = PoseBar(owner.frame_view)
+        self.pose_bar.add_row("Rotation °", rotation, owner.pushButton,
+                              "Reset rotation: all angles back to 0°")
+        self.pose_bar.add_row("Position", position, owner.btn_reset_position,
+                              "Reset position: move the model back to 0, 0, 0")
+        layout = owner.frame_view.layout()
+        layout.insertWidget(layout.indexOf(self.mouse_guide), self.pose_bar)
+        self.pose_bar.setVisible(self.pose_action.isChecked())
+
+    @staticmethod
+    def _hide_panel_labels(box):
+        """Hide the "X-Axis (…)" label before ``box`` in the panel, and
+        the section header before that one."""
+        parent = box.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        index = layout.indexOf(box) if layout is not None else -1
+        for offset in (1, 2):
+            item = layout.itemAt(index - offset) if index - offset >= 0 else None
+            widget = item.widget() if item is not None else None
+            if isinstance(widget, QLabel) and (
+                    offset == 1 or widget.property("role") == "section"):
+                widget.hide()
+
+    def _pose_bar_toggled(self, visible):
+        apply_all = getattr(self.owner.main_window, "show_pose_bar", None)
+        if apply_all:
+            apply_all(visible)
+        else:
+            self.set_pose_bar_visible(visible)
+
+    def set_pose_bar_visible(self, visible):
+        bar = getattr(self, "pose_bar", None)
+        if bar is not None:
+            bar.setVisible(visible)
+        self.pose_action.blockSignals(True)
+        self.pose_action.setChecked(visible)
+        self.pose_action.blockSignals(False)
 
     @staticmethod
     def _dropdown(toolbar, text, tooltip):
@@ -779,6 +881,9 @@ class VTKViewport:
     def apply_theme(self, name):
         self.theme = name
         self.mouse_guide.apply_theme(name)
+        # the toolbar keeps the drawn icon: give it a fresh one in the new colours
+        for action, icon_name in getattr(self, "_themed_actions", ()):
+            action.setIcon(icons.icon(icon_name))
         self.update_checkpoints()
         colors = view_colors(name)
         self.apply_background()
@@ -1141,6 +1246,14 @@ class RotationMixin:
             widget.blockSignals(False)
 
 
+def themed_icon(button, icon, variant=None):
+    """``icon`` = a ``QStyle.SP_*`` value or an ``icons.SHAPES`` name."""
+    if isinstance(icon, str):
+        return icons.icon(icon, icons.ROLE_OF_VARIANT.get(variant, "text"))
+    return (icons.for_standard(icon, variant)
+            or button.style().standardIcon(icon))
+
+
 def release_memory():
     """Collect garbage and hand freed heap pages back to the OS, so the
     RAM used by removed data shows up as free again."""
@@ -1267,8 +1380,9 @@ class TabMixin(RotationMixin):
             update(self, **info)
 
     def decorate(self, button, icon, tooltip="", variant=None):
-        """Standard icon / tooltip / style variant for a panel button."""
-        button.setIcon(button.style().standardIcon(icon))
+        """Themed icon (a ``QStyle.SP_*`` or an ``icons`` name) / tooltip /
+        style variant for a panel button."""
+        button.setIcon(themed_icon(button, icon, variant))
         if tooltip:
             button.setToolTip(tooltip)
         if variant:

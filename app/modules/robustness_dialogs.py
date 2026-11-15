@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
+from modules import icons
 from modules.degradation import AXES, SWEEP_KINDS, Degradation, parse_levels
 from modules.quality_report import ALGORITHM_NAMES
 
@@ -44,7 +45,8 @@ def _buttons(*specs):
     buttons = []
     for index, (label, icon) in enumerate(specs):
         button = QPushButton(label)
-        button.setIcon(button.style().standardIcon(icon))
+        button.setIcon(icons.for_standard(icon, "primary" if index == 0 else None)
+                       or button.style().standardIcon(icon))
         if index == 0:
             button.setProperty("variant", "primary")
         row.addWidget(button)
