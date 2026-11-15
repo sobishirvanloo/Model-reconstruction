@@ -2,7 +2,7 @@
 
 # گزارش جامع برنامه Model Reconstruction
 
-> تاریخ: 2026-11-15
+> تاریخ: 2026-11-15 · به‌روزرسانی: 2026-11-16
 
 ## ۱. مقدمه و معماری کلی
 
@@ -339,6 +339,8 @@ t = \frac{g - (g\cdot n)\,n}{\lVert g - (g\cdot n)\,n\rVert}, \qquad n' = \cos\t
 
 همه‌ی این کار در `ReconstructionWorker` (یک `QThread`) انجام می‌شود. تغییر هر پارامتر بعد از ۴۰۰ میلی‌ثانیه سکون (`LIVE_DEBOUNCE_MS`) بازسازی را دوباره اجرا می‌کند؛ اگر job دیگری در جریان باشد، `_pending_run` اجرای بعدی را با آخرین پارامترها زمان‌بندی می‌کند. پارامترها و ورودی‌ها روی thread رابط کاربری کپی می‌شوند تا worker هرگز داده‌ی در حال تغییر را نبیند.
 
+**به‌روزرسانی:** کل `build_mesh` حالا در پروسه‌ی کمکی اجرا می‌شود (`pipeline.py`، بخش ۱۱.۳) و worker فقط منتظر پاسخ می‌ماند؛ پس رابط کاربری هیچ‌وقت قفل نمی‌شود. اگر کاربر وسط یک بازسازی پارامتر را عوض کند و آن بازسازی بیش از ۸ ثانیه (`STOP_OLD_BUILD_AFTER`) طول کشیده باشد، متوقف می‌شود و بازسازی جدید شروع می‌شود.
+
 **حذف outlier آماری** (`remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)`): برای هر نقطه میانگین فاصله تا ۲۰ همسایه‌اش (d̄ᵢ) حساب می‌شود؛ نقطه حذف می‌شود اگر d̄ᵢ > μ + 2σ، که μ و σ میانگین و انحراف معیار d̄ در کل ابر هستند. این فرض می‌کند d̄ توزیع تقریباً گاوسی دارد.
 
 **کش پیش‌پردازش** (`cached_preprocess`): پیش‌پردازش کندترین مرحله است (حدود ۳ ثانیه روی خرگوش) ولی به پارامترهای بازسازی بستگی ندارد. کلید کش هش BLAKE2b محتوای آرایه‌ها به همراه دو گزینه است (`array_key`) و ۴ نتیجه‌ی آخر با سیاست LRU در یک `OrderedDict` نگه داشته می‌شوند.
@@ -546,6 +548,8 @@ P = \frac{|\{x: \text{acc}(x) < \tau\}|}{|S_R|}, \quad R = \frac{|\{y: \text{com
 3. **دورهای بعد (ظریف)**، حداکثر `MAX_PASSES = 4` دور: اطراف بهترین مقدار جستجو می‌شود (`_neighbours`). برای عدد صحیح ±1؛ برای عدد حقیقی ×0.8 و ×1.25 (گام ضربی، چون این پارامترها در مقیاس لگاریتمی اثر می‌گذارند) به اضافه‌ی نقطه‌ی میانی تا نزدیک‌ترین همسایه‌ی امتحان‌شده (شبیه جستجوی دودویی).
 4. توقف: وقتی یک دور هیچ بهبودی ندهد، بودجه (پیش‌فرض ۲۵ اجرا برای هر الگوریتم) تمام شود، یا کاربر لغو کند (`cancel` یک `threading.Event` است).
 
+**سقف زمانی هر اجرا** (`run_limit`): اجرایی که بیش از ۶ برابر کندترین اجرای موفق قبلی طول بکشد (حداقل ۹۰ ثانیه؛ برای اولین اجرای هر الگوریتم ۶۰۰ ثانیه) متوقف و با برچسب «too slow» در جدول ثبت می‌شود؛ جستجو ادامه پیدا می‌کند. دلیل این سقف، Ball Pivoting با ضریب ۴ به بالا روی داده‌ی نویزی است: زمان اجرای آن با حاصل‌ضرب شعاع در نویز انفجاری زیاد می‌شود و در یک آزمایش بیش از ۳۰ دقیقه تمام نشد. Cancel فوری است: اجرای جاری با بستن پروسه‌ی کمکی قطع می‌شود و در جدول ثبت نمی‌شود. اجراهای بهینه‌ساز فقط معیارها را برمی‌گردانند، نه خود مش را؛ برای همین حافظه بعد از چند دور ثابت می‌ماند.
+
 هر ترکیب فقط یک بار اجرا می‌شود (کش با کلید `tuple(sorted(values.items()))`) و پیش‌پردازش از `cached_preprocess` مشترک است. این روش تضمین بهینه‌ی سراسری نمی‌دهد؛ بهینه‌ی محلی نسبت به حرکت در یک محور است. در عوض با بودجه‌ی کم (هر اجرا چند ثانیه) کار می‌کند و به کتابخانه‌ی اضافه نیاز ندارد.
 
 **اعتبارسنجی با نویز** (`validate`): تنظیمات اولیه و بهترین روی یک کپی با نویز گاوسی σ = ۰.۲۵٪ d (seed = 1) دوباره اجرا می‌شوند. اگر بهبود روی داده‌ی جدید هم بماند، یعنی پارامترها فقط با همین ابر نقاط نیاموخته‌اند (مفهوم overfitting و داده‌ی آزمون در یادگیری ماشین).
@@ -660,6 +664,19 @@ R^2 = 1 - \frac{\sum_i e_i^2}{\sum_i \lVert q_i - \bar q \rVert^2}
     - شبکه‌ای از rendererها که یک دوربین مشترک دارند، با یک مقیاس رنگ مشترک.
   - مرجع می‌تواند نیمه‌شفاف روی مدل نمایش داده شود. برای جلوگیری از z-fighting دو سطح هم‌پوشان، polygon offset به کار می‌رود.
   - حداکثر مقیاس رنگ P95 یا مقدار دلخواه است؛ رنگ‌آمیزی یا با |e| است یا با مقدار علامت‌دار و نقشه‌ی رنگ دوقطبی.
+
+### ۸.۷ رنگ دو مدل
+
+بخش Colours در پنل تب ۴ برای هر مدل رنگ جدا می‌دهد. مقادیر با کلید `view/compare` در QSettings ذخیره می‌شوند (`load_model_colours`):
+
+| کلید | پیش‌فرض | اثر |
+| --- | --- | --- |
+| `compared` | None (رنگ تم) | رنگ مدل بازسازی‌شده، وقتی با خطا رنگ‌آمیزی نشده باشد |
+| `reference` | None (رنگ تم) | رنگ مدل اصلی |
+| `reference_opacity` | ۲۸٪ | شفافیت مدل اصلی روی بازسازی |
+| `error_colours` | روشن | اگر خاموش باشد، بعد از مقایسه هم هر دو مدل رنگ خودشان را دارند و حالت شبکه‌ای به یک نما برمی‌گردد |
+
+`_apply_main_colour` بعد از `show_actor` اجرا می‌شود و اگر رنگی انتخاب شده باشد، از تنظیمات Object ▾ اولویت دارد؛ نقشه‌ی خطا (scalar با نام `Error`) همیشه دست نخورده می‌ماند. `view_settings_changed` بعد از هر تغییر Object ▾ رنگ انتخابی را دوباره اعمال می‌کند. دکمه‌ی Default colours همه‌ی کلیدها را به مقادیر جدول برمی‌گرداند.
 
 ## ۹. هم‌ترازی مدل‌ها (`alignment.py`)
 
@@ -857,7 +874,7 @@ KD-tree، BVH و بیشتر کدهای GPU در float32 کار می‌کنند. 
 
 **محدودیت**: مسیر GPU در محیط تست بدون کارت CUDA اجرا نشده؛ فقط مسیر CPU آزمایش شده است. رندر (VTK/OpenGL) از قبل همیشه روی کارت گرافیک بود.
 
-### ۱۱.۳ پروسه‌ی ایزوله برای Poisson (`isolated.py`)
+### ۱۱.۳ پروسه‌ی ایزوله برای Poisson و کل خط لوله (`isolated.py`)
 
 مشکل: Poisson در Open3D گاهی داخل کد C++ به segfault می‌خورد (در crash.log دیده شد). یک segfault در همان پروسه قابل گرفتن نیست و کل برنامه را می‌بندد. راه‌حل این است که Poisson در یک پروسه‌ی کمکی طولانی‌عمر اجرا می‌شود:
 
@@ -886,7 +903,14 @@ KD-tree، BVH و بیشتر کدهای GPU در float32 کار می‌کنند. 
 
 دکمه‌ی Cancel و بستن برنامه (`isolated.abort`) کار در حال اجرا را فوراً متوقف می‌کنند. کارهای کوچک مثل پاک کردن کش یا روشن و خاموش کردن GPU با `run_if_started` فرستاده می‌شوند؛ این تابع هیچ‌وقت thread رابط کاربری را منتظر نگه نمی‌دارد و اگر کمکی مشغول باشد، کار را در صف می‌گذارد. کرش‌های بومی کمکی هم در همان `crash.log` نوشته می‌شوند.
 
-نتیجه‌ی اندازه‌گیری: طولانی‌ترین مکث رابط کاربری در کل یک بهینه‌سازی با هر پنج الگوریتم ۰.۰۸ ثانیه بود. Cancel روی Ball Pivoting گیرکرده در ۰.۰۷ ثانیه اثر کرد.
+**حافظه:** اجراهای بهینه‌ساز فقط اعداد معیارها را برمی‌گردانند (`keep_mesh=False`)، نه خود مش را. در پایان هر بهینه‌سازی هم `release_memory` صفحات آزادشده‌ی حافظه را به سیستم‌عامل برمی‌گرداند.
+
+| اندازه‌گیری | قبل | بعد |
+| --- | --- | --- |
+| طولانی‌ترین مکث رابط کاربری در یک بهینه‌سازی | ۴.۵ ثانیه | ۰.۱ ثانیه |
+| Ball Pivoting گیرکرده | بیش از ۳۰ دقیقه | تا سقف زمانی، بعد متوقف |
+| Cancel | تا پایان اجرای جاری | ۰.۱ ثانیه |
+| حافظه‌ی برنامه بعد از ۳ دور بهینه‌سازی | رشد ۴۰ تا ۲۰۰ مگابایت در هر دور | ثابت، ۷۰۵ مگابایت |
 
 ### ۱۱.۴ Hookهای خطا و logها (`safety.py`)
 
@@ -956,15 +980,15 @@ KD-tree، BVH و بیشتر کدهای GPU در float32 کار می‌کنند. 
 | --- | --- | --- |
 | `implicit_reconstruction.py` (۲۵۹) | RIMLS و Signed Distance | `_grid`، `_band`، `_extract`، `_sign_inverted`، `remove_small_pieces`، `rimls_values`، `reconstruct_rimls`، `reconstruct_signed_distance` |
 | `quality_metrics.py` (۲۹۸) | معیارهای کیفیت | `_SurfaceQuery`، `_PointQuery`، `mesh_properties`، `evaluate`، `metric_rows` |
-| `comparison_metrics.py` (۵۴۵) | هفت روش مقایسه | `Model`، `_Context`، `_local_planes`، `point_to_*`، `cloud_to_*`، `m3c2`، `error_stats`، `to_vertices`، `run_comparison` |
+| `comparison_metrics.py` (۵۴۵) | هفت روش مقایسه | `Model`، `_Context`، `_local_planes`، `point_to_*`، `cloud_to_*`، `m3c2`، `error_stats`، `to_vertices`، `run_comparison`، `run_comparison_isolated`، `compare_job` |
 | `alignment.py` (۱۲۲) | ثبت صلب | `misalignment`، `is_aligned`، `_features`، `align`، `describe` |
 | `optimizer.py` (۲۶۲) | بهینه‌ساز | `objective_value`، `score`، `_neighbours`، `optimize_algorithm`، `validate`، `run_optimization` |
 | `degradation.py` (۱۶۰) | تخریب کنترل‌شده | `position_noise`، `normal_noise`، `cut_holes`، `nonuniform_sampling`، `Degradation`، `sweep_settings`، `parse_levels` |
 | `geometry_utils.py` (۱۸۹) | ابزارهای مشترک | `load_array`، `normalize`، `bbox_diagonal`، `estimate_oriented_normals`، `orient_consistently`، `apply_transform`، `polydata_from_numpy`، `transfer_colors` |
 | `point_data.py` (۳۱۸) | ظرف داده + ابزارهای چیدمان | `PointCloudData` (`load`، `save`، `transformed`، `with_normals`)، `ask_open_point_cloud`، `insert_widget`، `add_section`، `make_scrollable` |
 | `compute.py` (۱۷۰) | GPU و حافظه | `KNN` (`knn`، `radius`)، `available_memory`، `cuda_available`، `set_gpu_enabled`، `device_name`، `centred` |
-| `isolated.py` | پروسه‌ی کمکی | `serve`، `run` (`timeout`، `cancel`)، `run_if_started`، `abort`، `poisson`، `warm_up`، `shutdown`، `TooSlow`، `Stopped` |
-| `pipeline.py` | خط لوله‌ی بازسازی بدون Qt | `preprocess`، `cached_preprocess`، `reconstruct_*`، `build_mesh_local`، `evaluate_mesh_local`، `build_mesh`، `evaluate_mesh`، `build_job`، `evaluate_job` |
+| `isolated.py` (۱۶۶) | پروسه‌ی کمکی | `serve`، `run` (`timeout`، `cancel`)، `run_if_started`، `abort`، `poisson`، `warm_up`، `shutdown`، `TooSlow`، `Stopped` |
+| `pipeline.py` | خط لوله‌ی بازسازی بدون Qt (در پروسه‌ی کمکی) | preprocess، cached\_preprocess، reconstruct\_\*، build\_mesh\_local، evaluate\_mesh\_local، build\_mesh، evaluate\_mesh، build\_job، evaluate\_job |
 
 ### ۱۲.۴ رابط کاربری و زیرساخت
 
@@ -1022,7 +1046,7 @@ python main.py
 2. آن را به `RECONSTRUCTORS` و `DEFAULT_FACTORS` و پیام راهنمای مش خالی در `build_mesh_local` (هر سه در `pipeline.py`) و به `FACTOR_LABELS` در `poisson_reconstruction.py` اضافه کنید.
 3. نام نمایشی را در `ALGORITHM_NAMES` (`quality_report.py`) بگذارید.
 4. فضای جستجویش را در `SPACES` (`optimizer.py`) تعریف کنید تا بهینه‌ساز و sweep هم آن را پوشش دهند.
-5. اگر کد native ناپایدار است، آن را مثل Poisson به `JOBS` در `isolated.py` اضافه کنید. ورودی و خروجی باید pickle‌شدنی باشند (آرایه‌ی NumPy، نه شیء Open3D).
+5. الگوریتم خودکار در پروسه‌ی کمکی اجرا می‌شود؛ کرش و گیر کردن آن برنامه را نمی‌بندد. برای یک کار بومی دیگر یک ورودی به `JOBS` در `isolated.py` اضافه کنید. ورودی و خروجی باید pickle‌شدنی باشند (آرایه‌ی NumPy، نه شیء Open3D).
 6. محاسبات float32 را روی داده‌ی مرکزی‌شده انجام دهید و مش را برگردانید (بخش ۱۱.۱).
 
 ### ۱۳.۳ افزودن یک روش مقایسه‌ی جدید
