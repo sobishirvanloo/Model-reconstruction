@@ -169,6 +169,36 @@ class Processing(TabMixin):
         self.degrade_dialog.show()
         self.degrade_dialog.raise_()
 
+    # =========================
+    # Slice
+    # =========================
+    def slice_source(self):
+        if self.points_changed is None:
+            return None
+        return {"kind": "points", "vertices": self.points_changed,
+                "triangles": None, "normals": self.normals_changed,
+                "colors": self.colors_changed}
+
+    def apply_slice(self, planes, cap):
+        """Slice the loaded points (the voxel / degradation / shuffle steps
+        then run again on what is left) and their ground-truth mesh."""
+        from modules import slicing
+        before = len(self.points)
+        keep = slicing.point_mask(self.points, planes)
+        if not keep.any():
+            raise ValueError("nothing is left inside the planes")
+        self.points = self.points[keep]
+        if self.normals is not None:
+            self.normals = self.normals[keep]
+        if self.colors is not None:
+            self.colors = self.colors[keep]
+        if self.reference is not None:
+            vertices, triangles = slicing.slice_mesh(*self.reference, planes, cap)
+            self.reference = (vertices, triangles) if len(triangles) else None
+        self.update_voxel_points()
+        self.record_checkpoint("Slice")
+        return f"Sliced: {len(self.points):,} points kept of {before:,}"
+
     def info_source(self):
         """What the Object info panel describes (the processed points)."""
         if self.points_changed is None:

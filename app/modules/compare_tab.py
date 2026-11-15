@@ -1208,6 +1208,48 @@ class Compare(TabMixin):
             self._render()
         self.chart.update()
 
+    # =========================
+    # Slice
+    # =========================
+    def slice_source(self):
+        model = self.compared or self.reference
+        if model is None:
+            return None
+        return {"kind": "mesh" if model.has_triangles else "points",
+                "vertices": model.vertices, "triangles": model.triangles,
+                "normals": model.normals, "colors": None}
+
+    def slice_actors(self):
+        actors = [self.actor, self.ref_actor]
+        actors += [a for _, actor, overlay in self._grid for a in (actor, overlay)]
+        return [a for a in actors if a is not None]
+
+    def apply_slice(self, planes, cap):
+        """Slice both models with the same planes: the comparison then
+        covers that region only (run it again)."""
+        from modules.slice_panel import slice_source_data
+
+        def cut(model):
+            if model is None:
+                return None
+            source = {"kind": "mesh" if model.has_triangles else "points",
+                      "vertices": model.vertices, "triangles": model.triangles,
+                      "normals": model.normals, "colors": None}
+            kind, vertices, triangles, normals, _ = slice_source_data(source, planes, cap)
+            if len(vertices) == 0:
+                raise ValueError(f"nothing of {model.name or 'a model'} is "
+                                 "left inside the planes")
+            return Model(vertices, triangles, normals, f"{model.name} ✂")
+        compared, reference = cut(self.compared), cut(self.reference)
+        self.set_models(compared, reference,
+                        compared.name if compared else self.source_name,
+                        reference.name if reference else self.reference_name,
+                        pose=self.pose_state())
+        self.console.appendPlainText(
+            "✂ Both models sliced - run the comparison again for this region")
+        parts = [f"{len(m.vertices):,}" for m in (compared, reference) if m is not None]
+        return "Sliced " + " / ".join(parts) + " vertices - run the comparison again"
+
     def view_settings_changed(self, kind):
         if self.actor is not None:          # Object settings restyled it
             main_model = self.compared or self.reference

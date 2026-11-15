@@ -25,6 +25,7 @@ from modules.import_mesh import MESH_EXTENSIONS, Geometry
 from modules.point_processing import POINT_EXTENSIONS, Processing
 from modules.poisson_reconstruction import PoissonReconstruction
 from modules.splash_screen import app_icon, create_splash_and_show, logo_pixmap
+from modules import slice_panel
 from modules.collapsible import make_collapsible
 from modules.splitters import make_resizable
 from modules.vtk_controls import CAMERA_VIEWS, release_memory
@@ -97,6 +98,7 @@ class MainWindow(QMainWindow):
 
         for key, tab in zip(("import", "processing", "reconstruction",
                              "compare"), self.tabs):
+            slice_panel.install(tab, cap_default=tab is not self.compare)
             tab.viewport.build_pose_bar()     # rotation / position under the view
             panel = tab.btn_import.parentWidget()
             panel.setProperty("role", "panel")

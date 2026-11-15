@@ -302,6 +302,32 @@ class Geometry(TabMixin):
             file=self.source_name, points=len(self.points),
             triangles=None if self.triangles is None else len(self.triangles))
 
+    # =========================
+    # Slice
+    # =========================
+    def slice_source(self):
+        if self.points is None:
+            return None
+        return {"kind": "points" if self.triangles is None else "mesh",
+                "vertices": self.points, "triangles": self.triangles,
+                "normals": self.normals, "colors": self.colors}
+
+    def apply_slice(self, planes, cap):
+        """Keep the part inside the planes (the mesh is the ground truth
+        the next tabs get, so it is sliced as well)."""
+        from modules.slice_panel import slice_source_data
+        before = len(self.points)
+        kind, vertices, triangles, normals, colors = slice_source_data(
+            self.slice_source(), planes, cap)
+        if len(vertices) == 0:
+            raise ValueError("nothing is left inside the planes")
+        self.points, self.normals = vertices, normals
+        self.triangles, self.colors = triangles, colors
+        self._show_data()
+        self.record_checkpoint("Slice")
+        unit = "points" if kind == "points" else "vertices"
+        return f"Sliced: {len(vertices):,} {unit} kept of {before:,}"
+
     def info_source(self):
         """What the Object info panel describes."""
         if self.points is None:

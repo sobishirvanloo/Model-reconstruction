@@ -1212,6 +1212,9 @@ class RotationMixin:
         and a checkpoint is taken once the change settles."""
         self._sync_axes()
         self.viewport.update_overlays()
+        slicer = getattr(self, "slice_panel", None)
+        if slicer is not None:                 # slice planes turn with the model
+            slicer.sync_pose()
         info = getattr(self, "object_info", None)
         if info is not None:
             info.schedule()
@@ -1306,6 +1309,9 @@ class RotationMixin:
             self.viewport.fit_camera()
         else:
             self.renderer.ResetCameraClippingRange()
+        slicer = getattr(self, "slice_panel", None)
+        if slicer is not None:                 # new geometry: preview again
+            slicer.on_data_changed()
         self.vtk_widget.GetRenderWindow().Render()
         return actor
 
@@ -1538,6 +1544,10 @@ class TabMixin(RotationMixin):
         self.actor = None
         self.actor_kind = None
         self.start_bounds = None
+        slicer = getattr(self, "slice_panel", None)
+        if slicer is not None:
+            slicer.clear()
+            slicer.on_data_changed()
         self.clear_checkpoints()          # they would keep the data in RAM
         self.reset_transform()
         self._pose_changed()

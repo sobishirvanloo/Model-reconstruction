@@ -580,6 +580,62 @@ class PoissonReconstruction(TabMixin):
         self.file_label.setProperty("role", "file")
         self.file_label.style().polish(self.file_label)
 
+    # =========================
+    # Slice
+    # =========================
+    def slice_source(self):
+        if self._mesh_arrays is not None:
+            vertices, normals, triangles = self._mesh_arrays
+            return {"kind": "mesh", "vertices": vertices, "triangles": triangles,
+                    "normals": normals, "colors": self._mesh_colors}
+        if self.points is not None:
+            return {"kind": "points", "vertices": self.points, "triangles": None,
+                    "normals": self.normals, "colors": self.colors}
+        return None
+
+    def apply_slice(self, planes, cap):
+        """With a mesh: keep its part inside the planes (export it, send it
+        to Compare; the ground truth is sliced too, so the quality is
+        measured on the same region).  Without one: slice the input
+        points.  A rebuild starts from the input points again."""
+        from modules import slicing
+        from modules.slice_panel import slice_source_data
+        source = self.slice_source()
+        if source is None:
+            raise ValueError("nothing to slice")
+        kind, vertices, triangles, normals, colors = slice_source_data(source, planes, cap)
+        if len(vertices) == 0:
+            raise ValueError("nothing is left inside the planes")
+        before = len(source["vertices"])
+        if kind == "points":
+            self.points, self.normals, self.colors = vertices, normals, colors
+            self._data_generation += 1
+            self._restart_reconstruction()
+            self.record_checkpoint("Slice (input points)")
+            return f"Sliced the input: {len(vertices):,} points kept of {before:,}"
+        if self._worker is not None:
+            raise ValueError("wait until the reconstruction has finished")
+        mesh = o3d.geometry.TriangleMesh(
+            o3d.utility.Vector3dVector(vertices),
+            o3d.utility.Vector3iVector(np.asarray(triangles, dtype=np.int32)))
+        mesh.vertex_normals = o3d.utility.Vector3dVector(normals)
+        if colors is not None:
+            mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+        self.mesh_o3d = mesh
+        self._mesh_arrays = (vertices, normals, triangles)
+        self._mesh_colors = colors
+        self.vertex_errors = None
+        if self.reference is not None:
+            ref_vertices, ref_triangles = slicing.slice_mesh(*self.reference, planes, cap)
+            if len(ref_triangles):
+                self.reference = (ref_vertices, ref_triangles)
+                self._reference_changed()          # quality of the same region
+        self._render_mesh()
+        self.btn_export.setEnabled(True)
+        self.record_checkpoint("Slice")
+        return (f"Sliced the mesh: {len(triangles):,} triangles kept "
+                "(a rebuild uses the full input points again)")
+
     def info_source(self):
         """What the Object info panel describes (the reconstructed mesh)."""
         if self._mesh_arrays is None:

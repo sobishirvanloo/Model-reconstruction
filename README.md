@@ -154,6 +154,20 @@ off to keep both models in their own colours after a comparison;
 * Both windows have **Default**, Cancel, Apply and Save; settings are
   saved (kept after a restart) and apply to all tabs. *Restore default*
   in each menu resets at once.
+* **Slice** (every tab, side panel) — up to six planes, each with a
+  position (X, Y, Z) and angles (X, Y, Z) in the model's own coordinates,
+  so they turn and move with it; presets X / Y / Z / Box (six planes
+  around the centre) / View (facing you). Live preview: the planes, the
+  kept part, the removed part faint and each plane's cut line, with the
+  cut length and area; *Drag the plane with the mouse* gives the selected
+  plane a handle. *Apply slice* keeps only the part inside (meshes are cut
+  exactly; *Close the cut* fills the opening so a closed mesh stays
+  closed), undoable with the checkpoint arrow; *Save slice…* writes the
+  kept part without applying it. Tab 1 slices the mesh (the ground truth
+  for the next tabs), tab 2 the points and their ground truth, tab 3 the
+  reconstruction and its ground truth (quality of that region), tab 4
+  both models (compare one region; *Close the cut* is off there by
+  default, as caps would count as matching surface).
 * **Persian interface** — *View ▸ Language ▸ فارسی* (restarts the
   program): menus, buttons, labels, tooltips, dialogs, table headers and
   the object info in Persian, laid out right to left; numbers, tables,
